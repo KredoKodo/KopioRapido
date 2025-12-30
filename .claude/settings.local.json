@@ -3,7 +3,12 @@
     "allow": [
       "Bash(dir /b:*)",
       "Bash(ls:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(powershell -Command \"Stop-Process -Name KopioRapido -Force\")",
+      "Bash(powershell -Command \"Stop-Process -Name KopioRapido -Force -ErrorAction SilentlyContinue\")"
     ]
   }
 }

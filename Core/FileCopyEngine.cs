@@ -15,6 +15,7 @@ public class FileCopyEngine
     private readonly IProgressTrackerService _progressTracker;
     private readonly IResumeService _resumeService;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _operations;
+    private readonly RetryConfiguration _retryConfig;
     private const long DELTA_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10 MB
 
     public FileCopyEngine(
@@ -26,6 +27,20 @@ public class FileCopyEngine
         _progressTracker = progressTracker;
         _resumeService = resumeService;
         _operations = new ConcurrentDictionary<string, CancellationTokenSource>();
+        _retryConfig = new RetryConfiguration(); // Use default configuration
+    }
+
+    public FileCopyEngine(
+        ILoggingService loggingService,
+        IProgressTrackerService progressTracker,
+        IResumeService resumeService,
+        RetryConfiguration retryConfig)
+    {
+        _loggingService = loggingService;
+        _progressTracker = progressTracker;
+        _resumeService = resumeService;
+        _operations = new ConcurrentDictionary<string, CancellationTokenSource>();
+        _retryConfig = retryConfig;
     }
 
     public async Task<CopyOperation> CopyAsync(
@@ -168,16 +183,41 @@ public class FileCopyEngine
 
         var stopwatch = Stopwatch.StartNew();
 
-        bool useDeltaSync = ShouldUseDeltaSync(sourceFile, destFile);
+        // Wrap the copy operation with retry logic
+        await RetryHelper.ExecuteWithRetryAsync(
+            async (attempt, ct) =>
+            {
+                bool useDeltaSync = ShouldUseDeltaSync(sourceFile, destFile);
 
-        if (useDeltaSync)
-        {
-            await CopyFileWithDeltaSyncAsync(operation, sourceFile, destFile, fileInfo.Length, progress, cancellationToken);
-        }
-        else
-        {
-            await CopyFileDirectAsync(operation, sourceFile, destFile, fileInfo.Length, progress, cancellationToken);
-        }
+                if (useDeltaSync)
+                {
+                    await CopyFileWithDeltaSyncAsync(operation, sourceFile, destFile, fileInfo.Length, progress, attempt, ct);
+                }
+                else
+                {
+                    await CopyFileDirectAsync(operation, sourceFile, destFile, fileInfo.Length, progress, attempt, ct);
+                }
+            },
+            _retryConfig,
+            onRetry: async (attemptNumber, exception, delay) =>
+            {
+                await _loggingService.LogAsync(operation.Id, LogLevel.Warning,
+                    $"Retry attempt {attemptNumber}/{_retryConfig.MaxRetryAttempts} for file '{fileName}' after error: {exception.Message}. Waiting {delay.TotalSeconds:F1}s before retry.");
+
+                // Report retry status to UI
+                progress?.Report(new FileTransferProgress
+                {
+                    FileName = fileName,
+                    SourcePath = sourceFile,
+                    DestinationPath = destFile,
+                    FileSize = fileInfo.Length,
+                    RetryAttempt = attemptNumber,
+                    MaxRetryAttempts = _retryConfig.MaxRetryAttempts,
+                    IsRetrying = true,
+                    LastError = exception.Message
+                });
+            },
+            cancellationToken);
 
         stopwatch.Stop();
 
@@ -219,6 +259,7 @@ public class FileCopyEngine
         string destFile,
         long fileSize,
         IProgress<FileTransferProgress>? progress,
+        int attemptNumber,
         CancellationToken cancellationToken)
     {
         try
@@ -277,7 +318,7 @@ public class FileCopyEngine
             await _loggingService.LogAsync(operation.Id, LogLevel.Warning,
                 $"Delta sync failed, falling back to direct copy: {ex.Message}");
 
-            await CopyFileDirectAsync(operation, sourceFile, destFile, fileSize, progress, cancellationToken);
+            await CopyFileDirectAsync(operation, sourceFile, destFile, fileSize, progress, attemptNumber, cancellationToken);
         }
     }
 
@@ -287,6 +328,7 @@ public class FileCopyEngine
         string destFile,
         long fileSize,
         IProgress<FileTransferProgress>? progress,
+        int attemptNumber,
         CancellationToken cancellationToken)
     {
         const int bufferSize = 1024 * 1024; // 1 MB buffer

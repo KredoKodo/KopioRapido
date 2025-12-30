@@ -26,7 +26,8 @@ KopioRapido is a cross-platform, high-performance file copying application built
 ```
 KopioRapido/
 ├── Core/                      # Business logic layer
-│   └── FileCopyEngine.cs     # Main file copying engine with FastRsyncNet integration
+│   ├── FileCopyEngine.cs     # Main file copying engine with FastRsyncNet integration
+│   └── RetryHelper.cs        # Retry logic with exponential backoff and transient error detection
 ├── Services/                  # Service layer
 │   ├── IFileOperationService.cs / FileOperationService.cs
 │   ├── ILoggingService.cs / LoggingService.cs
@@ -36,6 +37,8 @@ KopioRapido/
 ├── Models/                    # Data models
 │   ├── CopyOperation.cs      # Represents a copy operation with status/progress
 │   ├── FileTransferProgress.cs # Progress tracking for individual files
+│   ├── FileItem.cs           # Individual file display model with progress tracking
+│   ├── RetryConfiguration.cs # Retry policy configuration
 │   └── OperationLog.cs       # Logging data model
 ├── ViewModels/               # MVVM ViewModels
 │   └── MainViewModel.cs      # Main window ViewModel
@@ -45,7 +48,9 @@ KopioRapido/
 │   ├── PercentToProgressConverter.cs
 │   └── IsStringNotNullOrEmptyConverter.cs
 ├── Platforms/                # Platform-specific implementations
-│   ├── Windows/FolderPickerService.cs       # Native Windows folder picker
+│   ├── Windows/
+│   │   ├── FolderPickerService.cs       # Native Windows folder picker
+│   │   └── DragDropHelper.cs            # Native WinUI drag-drop handler (bypasses MAUI)
 │   ├── MacCatalyst/FolderPickerService.cs   # Native macOS folder picker
 │   ├── iOS/FolderPickerService.cs           # iOS folder picker (text input for now)
 │   └── Android/FolderPickerService.cs       # Android folder picker (text input for now)
@@ -64,13 +69,31 @@ The `FileCopyEngine` class is the heart of KopioRapido:
 - **Progress Tracking**: Real-time progress updates for both individual files and overall operation
 - **Resume Support**: All operations save state for automatic resumption after interruption
 - **Parallel Processing**: Uses async/await throughout for non-blocking operations
-- **Error Handling**: Comprehensive logging and retry logic for network issues
+- **Error Handling**: Comprehensive logging and automatic retry logic with exponential backoff
+- **Retry Logic**: Automatically retries transient errors (network issues, file locks, timeouts)
 
 Key methods:
-- `CopyAsync()` - Main entry point for copy operations
+- `CopyAsync()` - Main entry point for copy operations, wraps operations in retry logic
 - `CopyFileWithDeltaSyncAsync()` - Uses FastRsyncNet for efficient updates
 - `CopyFileDirectAsync()` - Standard copy with streaming and progress
 - `CopyDirectoryAsync()` - Recursive directory copying
+
+### Retry System (Core/RetryHelper.cs)
+
+The `RetryHelper` provides automatic retry with exponential backoff:
+
+- **Transient Error Detection**: Identifies retryable errors (network, IO, locking)
+- **Exponential Backoff**: Configurable delay multiplier (default 2.0x)
+- **Jitter**: Adds randomness to prevent thundering herd
+- **Error Classification**: Windows error codes (ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION, etc.)
+- **Cancellation Support**: Respects cancellation tokens, doesn't retry cancelled operations
+
+Configuration (RetryConfiguration):
+- MaxRetryAttempts: Default 3
+- InitialRetryDelayMs: Default 1000ms (1 second)
+- MaxRetryDelayMs: Default 30000ms (30 seconds)
+- BackoffMultiplier: Default 2.0
+- UseJitter: Default true
 
 ### Service Layer
 
@@ -99,12 +122,23 @@ See [PLATFORM_FOLDER_PICKERS.md](PLATFORM_FOLDER_PICKERS.md) for implementation 
 ### MAUI GUI
 
 The GUI provides a dual-pane interface with:
-- **Left Pane**: Source selection (Copy From) with native folder picker
-- **Right Pane**: Destination selection (Copy To) with native folder picker
-- **Progress Display**: Two progress bars (overall + current file)
+- **Left Pane (Source)**: Blue-bordered pane showing files to be copied
+  - Drag-and-drop support for folders (Windows native implementation)
+  - Browse button with native folder picker
+  - Real-time file list with individual progress bars
+  - Files disappear from source as they complete copying
+- **Right Pane (Destination)**: Green-bordered pane showing copied files
+  - Drag-and-drop support for folders (Windows native implementation)
+  - Browse button with native folder picker
+  - Files appear here as they complete copying
+  - Shows final file count and sizes
+- **Progress Display**:
+  - Individual progress bars under each file being copied
+  - Overall operation progress bar
+  - Real-time percentage updates
 - **Real-time Stats**: Current speed, average speed, ETA
-- **Activity Log**: Scrolling log of recent operations
-- **Drag-and-Drop**: Planned feature (not yet implemented)
+- **Activity Log**: Scrolling debug log at bottom of window
+- **File Transfer Visualization**: Files move from left pane to right pane as they copy
 
 ## Build Commands
 
@@ -161,6 +195,23 @@ Each platform uses its native folder selection dialog for the best user experien
 
 **Registration**: Platform-specific implementations are registered in `MauiProgram.cs` using conditional compilation (`#if WINDOWS`, etc.)
 
+### Native Drag-and-Drop (Windows)
+
+**Important**: MAUI's drag-drop abstraction is incomplete on Windows. The `DataPackageView` has no properties and doesn't expose platform APIs.
+
+**Solution**: `Platforms/Windows/DragDropHelper.cs` bypasses MAUI entirely:
+
+1. **Direct Platform Access**: Gets the native WinUI `FrameworkElement` from the MAUI Border's handler
+2. **Native Events**: Attaches Windows-specific `DragOver` and `Drop` event handlers
+3. **StorageItems API**: Uses `e.DataView.GetStorageItemsAsync()` to get dropped files
+4. **Integration**: Called from `MainPage.xaml.cs` `OnPageLoaded` event after XAML initialization
+
+Key implementation details:
+- MAUI's `DropGestureRecognizer` is NOT used (it doesn't work)
+- Borders must have `x:Name` attributes for lookup via `FindByName()`
+- Drop handler receives native Windows `DragEventArgs`, not MAUI's
+- Supports both files and folders via `StorageItems[0].Path`
+
 ### Progress Tracking Implementation
 
 Progress is reported through two mechanisms:
@@ -171,6 +222,8 @@ Speed calculations:
 - **Current Speed**: Bytes transferred / elapsed time for current file
 - **Average Speed**: Total bytes / total elapsed time for operation
 - **ETA**: Remaining bytes / average speed
+
+**UI Thread Marshalling**: All progress updates in `MainViewModel.UpdateProgress()` are wrapped in `MainThread.BeginInvokeOnMainThread()` to ensure ObservableCollection operations happen on the UI thread, enabling smooth progress bar animations and real-time file list updates.
 
 ### Resumability
 
@@ -189,16 +242,56 @@ All services are registered in `MauiProgram.cs`:
 - ViewModels: Transient lifetime
 - Pages: Transient lifetime
 
+## Completed Features (December 2025)
+
+### ✅ Implemented
+
+1. **Drag-and-Drop (Windows)**: ✅ COMPLETED
+   - Native WinUI drag-drop implementation bypassing MAUI
+   - Support for both files and folders
+   - Works on both source and destination panes
+   - Visual feedback during drag operations (border color changes)
+
+2. **Retry Logic with Exponential Backoff**: ✅ COMPLETED
+   - Automatic retry for transient errors (network, IO, file locks)
+   - Configurable retry attempts (default: 3)
+   - Exponential backoff with jitter
+   - Windows error code detection (sharing violations, lock violations, etc.)
+   - UI feedback showing retry attempts and status
+
+3. **Individual File Progress Tracking**: ✅ COMPLETED
+   - Real-time progress bars under each file
+   - Files move from source pane to destination pane as they complete
+   - Percentage display and visual indicators
+   - Retry status indicators (orange color when retrying)
+
+4. **Dual-Pane File Visualization**: ✅ COMPLETED
+   - Source pane (blue) shows files to be copied with progress
+   - Destination pane (green) shows completed files
+   - Files automatically removed from source as they finish
+   - Real-time file counts and sizes
+
+5. **Native Folder Pickers**: ✅ COMPLETED
+   - Windows: Native WinUI folder picker
+   - macOS: Native NSOpenPanel
+   - Browse buttons in both panes
+   - Command notification for button state management
+
+6. **UI Thread Safety**: ✅ COMPLETED
+   - All ObservableCollection updates marshalled to UI thread
+   - Smooth progress bar animations
+   - No UI freezing during copy operations
+
 ## Known Limitations & TODOs
 
 ### Current Limitations
 
 1. **Resume Logic**: Restarts entire operation rather than continuing from last file
-2. **Drag-and-Drop**: Not yet implemented
-3. **CLI Interface**: Structure exists but not implemented
-4. **Shell Integration**: Windows/macOS context menu integration not implemented
-5. **Retry Logic**: Basic error handling present but no automatic retry
-6. **iOS/Android Folder Pickers**: Using text input placeholders instead of native pickers
+2. **CLI Interface**: Structure exists but not implemented
+3. **Shell Integration**: Windows/macOS context menu integration not implemented
+4. **iOS/Android Drag-Drop**: Not implemented (only Windows has native drag-drop)
+5. **iOS/Android Folder Pickers**: Using text input placeholders instead of native pickers
+6. **Drag-Drop on macOS**: Not yet implemented (only Windows currently)
 
 ### Planned Enhancements
 
@@ -221,14 +314,14 @@ All services are registered in `MauiProgram.cs`:
    - macOS: Finder extension
    - Launch GUI with source pre-filled
 
-5. **Retry Logic**:
-   - Exponential backoff for network errors
-   - Configurable retry attempts
-   - Resume partial file transfers
+5. **Drag-and-Drop for macOS**:
+   - Implement native macOS drag-drop handler similar to Windows
+   - Use NSPasteboard and file promises
 
-6. **Drag-and-Drop**:
-   - Drop files/folders on source/destination panes
-   - Visual feedback during drag operations
+6. **Additional Operations**:
+   - Move operations (copy + delete source)
+   - Sync operations (bidirectional comparison and sync)
+   - Verification mode (compare without copying)
 
 ## Common Development Tasks
 
@@ -276,6 +369,48 @@ Check log files in `%LocalApplicationData%/KopioRapido/Logs/`
 - Ensure Windows 10 SDK Build Tools (10.0.26100+) installed for Windows builds
 - WinRT scenarios may show MVVMTK0045 warnings (safe to ignore unless targeting UWP)
 - Folder picker requires window handle initialization for WinUI 3
+- **Drag-Drop Issue**: MAUI's `DataPackageView` has zero properties and doesn't expose platform APIs - must use native WinUI implementation
+
+## Common Issues and Solutions
+
+### MAUI Drag-and-Drop Doesn't Work
+**Problem**: MAUI's `DropGestureRecognizer` fires events but `e.Data.Properties` is empty.
+
+**Root Cause**: MAUI's cross-platform abstraction doesn't properly bridge to Windows `StorageItems` API.
+
+**Solution**:
+1. Remove `DropGestureRecognizer` from XAML
+2. Create platform-specific handler in `Platforms/Windows/DragDropHelper.cs`
+3. Access native `FrameworkElement` via `Handler.PlatformView`
+4. Attach native Windows drag-drop events
+5. Use `e.DataView.GetStorageItemsAsync()` from native event args
+
+### Progress Bars Not Updating
+**Problem**: Progress bars remain at 0% even though files are copying.
+
+**Root Cause**: ObservableCollection updates from background threads don't trigger UI updates.
+
+**Solution**: Wrap all UI updates in `MainThread.BeginInvokeOnMainThread()`:
+```csharp
+MainThread.BeginInvokeOnMainThread(() =>
+{
+    sourceFile.Progress = progress.PercentComplete;
+    SourceFiles.Remove(completedFile);
+    DestinationFiles.Add(newFile);
+});
+```
+
+### Start Copy Button Doesn't Enable
+**Problem**: Button stays disabled even after selecting source and destination.
+
+**Root Cause**: MVVM toolkit doesn't know to re-evaluate `CanExecute` when properties change.
+
+**Solution**: Add `[NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]` attribute:
+```csharp
+[ObservableProperty]
+[NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]
+private string _sourcePath = string.Empty;
+```
 
 ## macOS-Specific Notes
 

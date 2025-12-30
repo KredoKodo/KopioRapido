@@ -15,12 +15,16 @@ public partial class MainViewModel : ObservableObject
     private string? _currentOperationId;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]
     private string _sourcePath = string.Empty;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]
     private string _destinationPath = string.Empty;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelCopyCommand))]
     private bool _isCopying;
 
     [ObservableProperty]
@@ -47,6 +51,15 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<string> _logMessages = new();
 
+    [ObservableProperty]
+    private ObservableCollection<FileItem> _sourceFiles = new();
+
+    [ObservableProperty]
+    private ObservableCollection<FileItem> _destinationFiles = new();
+
+    [ObservableProperty]
+    private bool _hasFilesToCopy;
+
     public MainViewModel(IFileOperationService fileOperationService, IProgressTrackerService progressTracker, IFolderPickerService folderPicker)
     {
         _fileOperationService = fileOperationService;
@@ -64,12 +77,68 @@ public partial class MainViewModel : ObservableObject
             {
                 SourcePath = result;
                 AddLogMessage($"Source selected: {SourcePath}");
+                await ScanSourceDirectoryAsync();
             }
         }
         catch (Exception ex)
         {
             AddLogMessage($"Error selecting source: {ex.Message}");
         }
+    }
+
+    private async Task ScanSourceDirectoryAsync()
+    {
+        SourceFiles.Clear();
+        DestinationFiles.Clear();
+
+        if (string.IsNullOrWhiteSpace(SourcePath) || !Directory.Exists(SourcePath))
+        {
+            HasFilesToCopy = false;
+            return;
+        }
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                var files = Directory.GetFiles(SourcePath, "*", SearchOption.AllDirectories);
+                var sourceDir = new DirectoryInfo(SourcePath);
+
+                foreach (var filePath in files)
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    var relativePath = Path.GetRelativePath(SourcePath, filePath);
+
+                    var fileItem = new FileItem
+                    {
+                        FileName = relativePath,
+                        FullPath = filePath,
+                        SizeBytes = fileInfo.Length,
+                        FormattedSize = FormatBytes(fileInfo.Length),
+                        Progress = 0,
+                        IsDirectory = false,
+                        IsCopying = false,
+                        IsCompleted = false
+                    };
+
+                    Application.Current?.Dispatcher.Dispatch(() => SourceFiles.Add(fileItem));
+                }
+
+                Application.Current?.Dispatcher.Dispatch(() =>
+                {
+                    HasFilesToCopy = SourceFiles.Count > 0;
+                    AddLogMessage($"Found {SourceFiles.Count} files to copy");
+                });
+            }
+            catch (Exception ex)
+            {
+                Application.Current?.Dispatcher.Dispatch(() =>
+                {
+                    AddLogMessage($"Error scanning directory: {ex.Message}");
+                    HasFilesToCopy = false;
+                });
+            }
+        });
     }
 
     [RelayCommand]
@@ -163,38 +232,72 @@ public partial class MainViewModel : ObservableObject
 
     private bool CanCancelCopy() => IsCopying;
 
-    public void SetSourcePath(string path)
+    public async Task SetSourcePathAsync(string path)
     {
         SourcePath = path;
         AddLogMessage($"Source path set: {path}");
+        await ScanSourceDirectoryAsync();
     }
 
     private void UpdateProgress(FileTransferProgress progress)
     {
-        CurrentFileName = progress.FileName;
-        CurrentFileProgress = progress.PercentComplete;
-        CurrentSpeed = $"{FormatBytes((long)progress.CurrentSpeedBytesPerSecond)}/s";
-        AverageSpeed = $"{FormatBytes((long)progress.AverageSpeedBytesPerSecond)}/s";
-
-        if (_currentOperationId != null)
+        // Ensure UI updates happen on main thread
+        MainThread.BeginInvokeOnMainThread(() =>
         {
-            var overallProg = _progressTracker.GetOverallProgress(_currentOperationId);
-            OverallProgress = overallProg;
+            CurrentFileName = progress.FileName;
+            CurrentFileProgress = progress.PercentComplete;
+            CurrentSpeed = $"{FormatBytes((long)progress.CurrentSpeedBytesPerSecond)}/s";
+            AverageSpeed = $"{FormatBytes((long)progress.AverageSpeedBytesPerSecond)}/s";
 
-            var eta = _progressTracker.GetEstimatedTimeRemaining(_currentOperationId);
-            if (eta.HasValue)
+            // Update source file item progress
+            var sourceFile = SourceFiles.FirstOrDefault(f => f.FileName == progress.FileName);
+            if (sourceFile != null)
             {
-                EstimatedTimeRemaining = FormatTimeSpan(eta.Value);
+                sourceFile.Progress = progress.PercentComplete;
+                sourceFile.IsCopying = progress.PercentComplete < 100 && !progress.IsRetrying;
+                sourceFile.IsCompleted = progress.PercentComplete >= 100;
+                sourceFile.IsRetrying = progress.IsRetrying;
+                sourceFile.RetryAttempt = progress.RetryAttempt;
+                sourceFile.LastError = progress.LastError;
             }
-        }
 
-        if (progress.PercentComplete >= 100)
-        {
-            AddLogMessage($"Completed: {progress.FileName} ({FormatBytes(progress.FileSize)})");
-        }
+            if (_currentOperationId != null)
+            {
+                var overallProg = _progressTracker.GetOverallProgress(_currentOperationId);
+                OverallProgress = overallProg;
+
+                var eta = _progressTracker.GetEstimatedTimeRemaining(_currentOperationId);
+                if (eta.HasValue)
+                {
+                    EstimatedTimeRemaining = FormatTimeSpan(eta.Value);
+                }
+            }
+
+            if (progress.PercentComplete >= 100 && sourceFile != null)
+            {
+                AddLogMessage($"Completed: {progress.FileName} ({FormatBytes(progress.FileSize)})");
+
+                // Remove from source pane
+                SourceFiles.Remove(sourceFile);
+
+                // Add to destination pane
+                var destFile = new FileItem
+                {
+                    FileName = progress.FileName,
+                    FullPath = Path.Combine(DestinationPath, progress.FileName),
+                    SizeBytes = progress.FileSize,
+                    FormattedSize = FormatBytes(progress.FileSize),
+                    Progress = 100,
+                    IsDirectory = false,
+                    IsCopying = false,
+                    IsCompleted = true
+                };
+                DestinationFiles.Add(destFile);
+            }
+        });
     }
 
-    private void AddLogMessage(string message)
+    public void AddLogMessage(string message)
     {
         var timestamp = DateTime.Now.ToString("HH:mm:ss");
         LogMessages.Insert(0, $"[{timestamp}] {message}");

@@ -11,4 +11,10 @@ public class FileTransferProgress
     public double CurrentSpeedBytesPerSecond { get; set; }
     public double AverageSpeedBytesPerSecond { get; set; }
     public TimeSpan? EstimatedTimeRemaining { get; set; }
+
+    // Retry tracking
+    public int RetryAttempt { get; set; }
+    public int MaxRetryAttempts { get; set; }
+    public bool IsRetrying { get; set; }
+    public string? LastError { get; set; }
 }
