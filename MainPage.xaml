@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:KopioRapido.ViewModels"
+             x:Class="KopioRapido.MainPage"
+             Title="KopioRapido - High-Speed File Copy"
+             x:DataType="viewmodels:MainViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" Padding="20">
+
+        <!-- Title -->
+        <Label Grid.Row="0"
+               Text="KopioRapido"
+               FontSize="32"
+               FontAttributes="Bold"
+               HorizontalOptions="Center"
+               Margin="0,0,0,20"/>
+
+        <!-- Dual Pane for Source and Destination -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,20,*" RowDefinitions="Auto,*" Margin="0,0,0,20">
+
+            <!-- Source Pane -->
+            <VerticalStackLayout Grid.Column="0" Grid.Row="0" Grid.RowSpan="2">
+                <Label Text="Copy From (Source)"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       Margin="0,0,0,10"/>
+
+                <Border BackgroundColor="{AppThemeBinding Light=#F0F0F0, Dark=#2C2C2C}"
+                        Stroke="{AppThemeBinding Light=#CCCCCC, Dark=#444444}"
+                        StrokeThickness="2"
+                        HeightRequest="200"
+                        Padding="10"
+                        Margin="0,0,0,10">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+
+                    <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center">
+                        <Label Text="{Binding SourcePath}"
+                               IsVisible="{Binding SourcePath, Converter={StaticResource IsStringNotNullOrEmptyConverter}}"
+                               FontSize="14"
+                               HorizontalOptions="Center"
+                               LineBreakMode="TailTruncation"
+                               MaxLines="3"/>
+
+                        <Label Text="Click below to select folder"
+                               FontSize="16"
+                               HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#888888, Dark=#AAAAAA}"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Button Text="Select Source Folder"
+                        Command="{Binding SelectSourceCommand}"
+                        IsEnabled="{Binding IsCopying, Converter={StaticResource InverseBoolConverter}}"/>
+            </VerticalStackLayout>
+
+            <!-- Separator -->
+            <BoxView Grid.Column="1" Grid.Row="0" Grid.RowSpan="2"
+                     WidthRequest="2"
+                     Color="{AppThemeBinding Light=#CCCCCC, Dark=#444444}"
+                     VerticalOptions="Fill"
+                     HorizontalOptions="Center"/>
+
+            <!-- Destination Pane -->
+            <VerticalStackLayout Grid.Column="2" Grid.Row="0" Grid.RowSpan="2">
+                <Label Text="Copy To (Destination)"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       Margin="0,0,0,10"/>
+
+                <Border BackgroundColor="{AppThemeBinding Light=#F0F0F0, Dark=#2C2C2C}"
+                        Stroke="{AppThemeBinding Light=#CCCCCC, Dark=#444444}"
+                        StrokeThickness="2"
+                        HeightRequest="200"
+                        Padding="10"
+                        Margin="0,0,0,10">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+
+                    <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center">
+                        <Label Text="{Binding DestinationPath}"
+                               IsVisible="{Binding DestinationPath, Converter={StaticResource IsStringNotNullOrEmptyConverter}}"
+                               FontSize="14"
+                               HorizontalOptions="Center"
+                               LineBreakMode="TailTruncation"
+                               MaxLines="3"/>
+
+                        <Label Text="Click below to select folder"
+                               FontSize="16"
+                               HorizontalTextAlignment="Center"
+                               TextColor="{AppThemeBinding Light=#888888, Dark=#AAAAAA}"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <Button Text="Select Destination Folder"
+                        Command="{Binding SelectDestinationCommand}"
+                        IsEnabled="{Binding IsCopying, Converter={StaticResource InverseBoolConverter}}"/>
+            </VerticalStackLayout>
+        </Grid>
+
+        <!-- Progress Section -->
+        <VerticalStackLayout Grid.Row="2" Spacing="10" Margin="0,0,0,20">
+
+            <!-- Overall Progress -->
+            <Label Text="Overall Progress"
+                   FontSize="16"
+                   FontAttributes="Bold"/>
+
+            <ProgressBar Progress="{Binding OverallProgress, Converter={StaticResource PercentToProgressConverter}}"
+                         HeightRequest="30"/>
+
+            <Label Text="{Binding OverallProgress, StringFormat='{0:F1}%'}"
+                   HorizontalOptions="Center"
+                   FontSize="14"/>
+
+            <!-- Current File Progress -->
+            <Label Text="{Binding CurrentFileName, StringFormat='Current File: {0}'}"
+                   FontSize="14"
+                   IsVisible="{Binding CurrentFileName, Converter={StaticResource IsStringNotNullOrEmptyConverter}}"
+                   Margin="0,10,0,0"/>
+
+            <ProgressBar Progress="{Binding CurrentFileProgress, Converter={StaticResource PercentToProgressConverter}}"
+                         HeightRequest="20"
+                         IsVisible="{Binding CurrentFileName, Converter={StaticResource IsStringNotNullOrEmptyConverter}}"/>
+
+            <!-- Speed and Stats -->
+            <Grid ColumnDefinitions="*,*,*" IsVisible="{Binding IsCopying}">
+                <Label Grid.Column="0"
+                       Text="{Binding CurrentSpeed, StringFormat='Speed: {0}'}"
+                       FontSize="12"
+                       HorizontalOptions="Start"/>
+
+                <Label Grid.Column="1"
+                       Text="{Binding AverageSpeed, StringFormat='Avg: {0}'}"
+                       FontSize="12"
+                       HorizontalOptions="Center"/>
+
+                <Label Grid.Column="2"
+                       Text="{Binding EstimatedTimeRemaining, StringFormat='ETA: {0}'}"
+                       FontSize="12"
+                       HorizontalOptions="End"/>
+            </Grid>
+        </VerticalStackLayout>
+
+        <!-- Control Buttons -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="10" Margin="0,0,0,20">
+            <Button Grid.Column="0"
+                    Text="Start Copy"
+                    Command="{Binding StartCopyCommand}"
+                    BackgroundColor="{AppThemeBinding Light=#4CAF50, Dark=#2E7D32}"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    HeightRequest="50"/>
+
+            <Button Grid.Column="1"
+                    Text="Cancel"
+                    Command="{Binding CancelCopyCommand}"
+                    BackgroundColor="{AppThemeBinding Light=#F44336, Dark=#C62828}"
+                    TextColor="White"
+                    FontAttributes="Bold"
+                    HeightRequest="50"/>
+        </Grid>
+
+        <!-- Log Messages -->
+        <VerticalStackLayout Grid.Row="4" Spacing="5">
+            <Label Text="Activity Log"
+                   FontSize="16"
+                   FontAttributes="Bold"/>
+
+            <Border BackgroundColor="{AppThemeBinding Light=#FAFAFA, Dark=#1E1E1E}"
+                    Stroke="{AppThemeBinding Light=#CCCCCC, Dark=#444444}"
+                    StrokeThickness="1"
+                    HeightRequest="150"
+                    Padding="10">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="4"/>
+                </Border.StrokeShape>
+
+                <ScrollView>
+                    <CollectionView ItemsSource="{Binding LogMessages}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Label Text="{Binding}"
+                                       FontSize="11"
+                                       FontFamily="Consolas,monospace"
+                                       Padding="2"/>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </ScrollView>
+            </Border>
+
+            <Label Text="{Binding StatusMessage}"
+                   FontSize="14"
+                   FontAttributes="Bold"
+                   HorizontalOptions="Center"
+                   Margin="0,10,0,0"/>
+        </VerticalStackLayout>
+    </Grid>
+</ContentPage>
