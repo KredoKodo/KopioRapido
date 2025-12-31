@@ -187,7 +187,13 @@ public class FileCopyEngine
         await RetryHelper.ExecuteWithRetryAsync(
             async (attempt, ct) =>
             {
-                bool useDeltaSync = ShouldUseDeltaSync(sourceFile, destFile);
+                bool useDeltaSync = ShouldUseDeltaSync(sourceFile, destFile, out bool isPartialFile);
+
+                if (isPartialFile)
+                {
+                    await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                        $"Detected partial file transfer, using delta sync to resume: {fileName}");
+                }
 
                 if (useDeltaSync)
                 {
@@ -230,20 +236,33 @@ public class FileCopyEngine
             $"File copied successfully: {fileName} in {stopwatch.Elapsed.TotalSeconds:F2}s", sourceFile);
     }
 
-    private bool ShouldUseDeltaSync(string sourceFile, string destFile)
+    private bool ShouldUseDeltaSync(string sourceFile, string destFile, out bool isPartialFile)
     {
+        isPartialFile = false;
+
         if (!File.Exists(destFile))
         {
             return false;
         }
 
         var sourceInfo = new FileInfo(sourceFile);
+        var destInfo = new FileInfo(destFile);
+
+        // Always use delta sync for partial files (incomplete transfers)
+        // This helps resume interrupted file copies efficiently
+        if (destInfo.Length > 0 && destInfo.Length < sourceInfo.Length)
+        {
+            isPartialFile = true;
+            return true;
+        }
+
+        // For complete files, only use delta sync if they're large enough
         if (sourceInfo.Length < DELTA_THRESHOLD_BYTES)
         {
             return false;
         }
 
-        var destInfo = new FileInfo(destFile);
+        // Skip delta sync if files are already identical
         if (sourceInfo.Length == destInfo.Length &&
             sourceInfo.LastWriteTimeUtc == destInfo.LastWriteTimeUtc)
         {
@@ -395,6 +414,7 @@ public class FileCopyEngine
         Directory.CreateDirectory(destDir);
 
         var files = Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories);
+        int skippedFiles = 0;
 
         foreach (var sourceFile in files)
         {
@@ -403,7 +423,31 @@ public class FileCopyEngine
             var relativePath = Path.GetRelativePath(sourceDir, sourceFile);
             var destFile = Path.Combine(destDir, relativePath);
 
+            // Check if file was already completed in a previous run
+            if (IsFileAlreadyCompleted(operation, sourceFile, destFile, sourceDir))
+            {
+                skippedFiles++;
+                await _loggingService.LogAsync(operation.Id, LogLevel.Debug,
+                    $"Skipping already completed file: {relativePath}");
+                continue;
+            }
+
             await CopyFileAsync(operation, sourceFile, destFile, progress, cancellationToken);
+
+            // Mark file as completed for resume purposes
+            MarkFileAsCompleted(operation, sourceFile, sourceDir);
+
+            // Periodically save operation state (every 10 files)
+            if (operation.FilesTransferred % 10 == 0)
+            {
+                await _resumeService.SaveOperationStateAsync(operation);
+            }
+        }
+
+        if (skippedFiles > 0)
+        {
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Skipped {skippedFiles} already completed files");
         }
     }
 
@@ -413,6 +457,137 @@ public class FileCopyEngine
         {
             cts.Cancel();
         }
+    }
+
+    public async Task<CopyOperation> ResumeAsync(
+        string operationId,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var operation = await _resumeService.LoadOperationStateAsync(operationId);
+        if (operation == null)
+        {
+            throw new InvalidOperationException($"Operation {operationId} not found");
+        }
+
+        if (!await _resumeService.CanResumeAsync(operationId))
+        {
+            throw new InvalidOperationException($"Operation {operationId} cannot be resumed");
+        }
+
+        await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+            $"Resuming copy operation from '{operation.SourcePath}' to '{operation.DestinationPath}'. " +
+            $"Already completed: {operation.FilesTransferred}/{operation.TotalFiles} files ({FormatBytes(operation.BytesTransferred)}/{FormatBytes(operation.TotalBytes)})");
+
+        operation.Status = CopyStatus.InProgress;
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _operations.TryAdd(operation.Id, cts);
+
+        try
+        {
+            _progressTracker.SetTotalSize(operation.Id, operation.TotalBytes, operation.TotalFiles);
+            _progressTracker.SetProgress(operation.Id, operation.BytesTransferred, operation.FilesTransferred);
+
+            if (File.Exists(operation.SourcePath))
+            {
+                await CopyFileAsync(operation, operation.SourcePath, operation.DestinationPath, progress, cts.Token);
+            }
+            else if (Directory.Exists(operation.SourcePath))
+            {
+                await CopyDirectoryAsync(operation, operation.SourcePath, operation.DestinationPath, progress, cts.Token);
+            }
+            else
+            {
+                throw new FileNotFoundException($"Source path not found: {operation.SourcePath}");
+            }
+
+            operation.Status = CopyStatus.Completed;
+            operation.EndTime = DateTime.UtcNow;
+
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Resume copy operation completed successfully. {operation.FilesTransferred} files, {FormatBytes(operation.BytesTransferred)} transferred");
+        }
+        catch (OperationCanceledException)
+        {
+            operation.Status = CopyStatus.Cancelled;
+            operation.EndTime = DateTime.UtcNow;
+            await _loggingService.LogAsync(operation.Id, LogLevel.Warning, "Resume operation was cancelled");
+        }
+        catch (Exception ex)
+        {
+            operation.Status = CopyStatus.Failed;
+            operation.ErrorMessage = ex.Message;
+            operation.EndTime = DateTime.UtcNow;
+            await _loggingService.LogAsync(operation.Id, LogLevel.Error,
+                $"Resume operation failed: {ex.Message}");
+        }
+        finally
+        {
+            await _resumeService.SaveOperationStateAsync(operation);
+            _operations.TryRemove(operation.Id, out _);
+        }
+
+        return operation;
+    }
+
+    private bool IsFileAlreadyCompleted(CopyOperation operation, string sourceFile, string destFile, string sourceDir)
+    {
+        var relativePath = Path.GetRelativePath(sourceDir, sourceFile);
+
+        // Check if file was already completed in a previous run
+        var completedFile = operation.CompletedFiles.FirstOrDefault(f => f.RelativePath == relativePath);
+        if (completedFile == null)
+        {
+            return false;
+        }
+
+        // Verify destination file still exists
+        if (!File.Exists(destFile))
+        {
+            // Destination was deleted, need to recopy
+            operation.CompletedFiles.Remove(completedFile);
+            return false;
+        }
+
+        // Verify file integrity (size and last modified time match)
+        var sourceInfo = new FileInfo(sourceFile);
+        var destInfo = new FileInfo(destFile);
+
+        if (sourceInfo.Length != completedFile.FileSize ||
+            sourceInfo.LastWriteTimeUtc != completedFile.LastModified)
+        {
+            // Source file changed, need to recopy
+            operation.CompletedFiles.Remove(completedFile);
+            return false;
+        }
+
+        // Verify destination file has same size
+        if (destInfo.Length != completedFile.FileSize)
+        {
+            // Destination file corrupted, need to recopy
+            operation.CompletedFiles.Remove(completedFile);
+            return false;
+        }
+
+        return true;
+    }
+
+    private void MarkFileAsCompleted(CopyOperation operation, string sourceFile, string sourceDir)
+    {
+        var sourceInfo = new FileInfo(sourceFile);
+        var relativePath = Path.GetRelativePath(sourceDir, sourceFile);
+
+        var completedFile = new CompletedFileInfo
+        {
+            RelativePath = relativePath,
+            FileSize = sourceInfo.Length,
+            LastModified = sourceInfo.LastWriteTimeUtc,
+            CompletedAt = DateTime.UtcNow
+        };
+
+        // Remove if already exists (shouldn't happen, but be safe)
+        operation.CompletedFiles.RemoveAll(f => f.RelativePath == relativePath);
+        operation.CompletedFiles.Add(completedFile);
     }
 
     private static string FormatBytes(long bytes)

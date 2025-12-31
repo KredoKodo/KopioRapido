@@ -8,7 +8,10 @@
       "Bash(findstr:*)",
       "Bash(taskkill:*)",
       "Bash(powershell -Command \"Stop-Process -Name KopioRapido -Force\")",
-      "Bash(powershell -Command \"Stop-Process -Name KopioRapido -Force -ErrorAction SilentlyContinue\")"
+      "Bash(powershell -Command \"Stop-Process -Name KopioRapido -Force -ErrorAction SilentlyContinue\")",
+      "Bash(dotnet build:*)",
+      "Bash(powershell -Command \"Remove-Item -Recurse -Force ''Platforms\\\\iOS''\")",
+      "Bash(powershell -Command \"Remove-Item -Recurse -Force ''Platforms\\\\Android''\")"
     ]
   }
 }

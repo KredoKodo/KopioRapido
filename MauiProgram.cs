@@ -34,10 +34,6 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IFolderPickerService, Platforms.Windows.FolderPickerService>();
 #elif MACCATALYST
 		builder.Services.AddSingleton<IFolderPickerService, Platforms.MacCatalyst.FolderPickerService>();
-#elif IOS
-		builder.Services.AddSingleton<IFolderPickerService, Platforms.iOS.FolderPickerService>();
-#elif ANDROID
-		builder.Services.AddSingleton<IFolderPickerService, Platforms.Android.FolderPickerService>();
 #endif
 
 		// Register ViewModels

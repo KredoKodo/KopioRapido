@@ -39,6 +39,15 @@ public class ProgressTrackerService : IProgressTrackerService
         operation.TotalFilesExpected = totalFiles;
     }
 
+    public void SetProgress(string operationId, long bytesTransferred, int filesTransferred)
+    {
+        var operation = _operations.GetOrAdd(operationId, _ => new OperationProgress());
+        operation.TotalBytesTransferred = bytesTransferred;
+        operation.TotalFilesTransferred = filesTransferred;
+        operation.StartTime = DateTime.UtcNow; // Reset start time for accurate speed calculation
+        operation.LastUpdateTime = DateTime.UtcNow;
+    }
+
     public FileTransferProgress? GetCurrentFileProgress(string operationId)
     {
         return _operations.TryGetValue(operationId, out var operation) ? operation.CurrentFile : null;

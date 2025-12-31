@@ -16,6 +16,15 @@ public class CopyOperation
     public string? CurrentFile { get; set; }
     public string? ErrorMessage { get; set; }
     public bool CanResume { get; set; }
+    public List<CompletedFileInfo> CompletedFiles { get; set; } = new();
+}
+
+public class CompletedFileInfo
+{
+    public string RelativePath { get; set; } = string.Empty;
+    public long FileSize { get; set; }
+    public DateTime LastModified { get; set; }
+    public DateTime CompletedAt { get; set; }
 }
 
 public enum CopyOperationType

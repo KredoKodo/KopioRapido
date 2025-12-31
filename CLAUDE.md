@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-KopioRapido is a cross-platform, high-performance file copying application built with .NET 10 and .NET MAUI. It provides RoboCopy-like functionality with a modern GUI and CLI interface, leveraging the FastRsyncNet library for efficient delta synchronization.
+KopioRapido is a desktop file copying application built with .NET 10 and .NET MAUI, targeting **Windows and macOS**. It provides RoboCopy-like functionality with a modern GUI and CLI interface, leveraging the FastRsyncNet library for efficient delta synchronization.
 
 **Primary Goals:**
 - Provide the fastest possible file copying with reliable, resumable operations
@@ -51,9 +51,7 @@ KopioRapido/
 │   ├── Windows/
 │   │   ├── FolderPickerService.cs       # Native Windows folder picker
 │   │   └── DragDropHelper.cs            # Native WinUI drag-drop handler (bypasses MAUI)
-│   ├── MacCatalyst/FolderPickerService.cs   # Native macOS folder picker
-│   ├── iOS/FolderPickerService.cs           # iOS folder picker (text input for now)
-│   └── Android/FolderPickerService.cs       # Android folder picker (text input for now)
+│   └── MacCatalyst/FolderPickerService.cs   # Native macOS folder picker
 ├── CLI/                      # Command-line interface (future implementation)
 ├── MainPage.xaml[.cs]        # Main dual-pane UI (in root directory)
 └── MauiProgram.cs            # DI registration and app configuration
@@ -115,7 +113,6 @@ Configuration (RetryConfiguration):
 - Each platform has its own implementation in `Platforms/{Platform}/FolderPickerService.cs`
 - Windows: Uses `Windows.Storage.Pickers.FolderPicker`
 - macOS: Uses `NSOpenPanel` from AppKit
-- iOS/Android: Currently text input (upgradable to native pickers)
 
 See [PLATFORM_FOLDER_PICKERS.md](PLATFORM_FOLDER_PICKERS.md) for implementation details.
 
@@ -190,10 +187,8 @@ Each platform uses its native folder selection dialog for the best user experien
 
 - **Windows**: `Windows.Storage.Pickers.FolderPicker` with WinUI 3 window handle initialization
 - **macOS**: `NSOpenPanel` from AppKit, must run on main thread
-- **iOS**: Currently simple text input via `UIAlertController` (upgradable to `UIDocumentPickerViewController`)
-- **Android**: Currently simple text input via `AlertDialog` (upgradable to Storage Access Framework)
 
-**Registration**: Platform-specific implementations are registered in `MauiProgram.cs` using conditional compilation (`#if WINDOWS`, etc.)
+**Registration**: Platform-specific implementations are registered in `MauiProgram.cs` using conditional compilation (`#if WINDOWS` and `#elif MACCATALYST`)
 
 ### Native Drag-and-Drop (Windows)
 
@@ -227,12 +222,33 @@ Speed calculations:
 
 ### Resumability
 
-Operations are resumable through:
-1. Periodic state saves during copying
-2. JSON persistence of `CopyOperation` objects
-3. Automatic detection of incomplete operations on startup
+Operations are resumable through smart resume functionality:
 
-**Note**: Current implementation restarts from beginning on resume. Future enhancement should track completed files.
+1. **Completed File Tracking**: Each successfully copied file is recorded with:
+   - Relative path from source directory
+   - File size for integrity verification
+   - Last modified timestamp
+   - Completion timestamp
+
+2. **Automatic State Persistence**:
+   - Operation state saved every 10 files
+   - JSON persistence in `%LocalApplicationData%/KopioRapido/Operations/`
+   - Automatic detection of incomplete operations on startup
+
+3. **File Integrity Verification**: Before skipping a file, the system verifies:
+   - Destination file still exists
+   - Source file hasn't been modified (size and timestamp match)
+   - Destination file size matches expected size
+
+4. **Smart Skip Logic**:
+   - Already-completed files are skipped on resume
+   - Modified or missing files are automatically re-copied
+   - Resume continues from exact point of interruption
+
+5. **Resume API**:
+   - `ResumeAsync(operationId)` - Resume a specific operation
+   - `GetResumableOperationsAsync()` - List all resumable operations
+   - `CanResumeAsync(operationId)` - Check if operation can be resumed
 
 ### Dependency Injection
 
@@ -282,43 +298,39 @@ All services are registered in `MauiProgram.cs`:
    - Smooth progress bar animations
    - No UI freezing during copy operations
 
+7. **Smart Resume**: ✅ COMPLETED
+   - Tracks completed files with file integrity information
+   - Skips already-copied files on resume
+   - Verifies file integrity (size and last modified time)
+   - Detects if source or destination changed since last run
+   - Automatic state persistence every 10 files
+   - Resume from exact point of interruption
+
 ## Known Limitations & TODOs
 
 ### Current Limitations
 
-1. **Resume Logic**: Restarts entire operation rather than continuing from last file
-2. **CLI Interface**: Structure exists but not implemented
-3. **Shell Integration**: Windows/macOS context menu integration not implemented
-4. **iOS/Android Drag-Drop**: Not implemented (only Windows has native drag-drop)
-5. **iOS/Android Folder Pickers**: Using text input placeholders instead of native pickers
-6. **Drag-Drop on macOS**: Not yet implemented (only Windows currently)
+1. **CLI Interface**: Structure exists but not implemented
+2. **Shell Integration**: Windows/macOS context menu integration not implemented
+3. **Drag-Drop on macOS**: Not yet implemented (only Windows currently)
 
 ### Planned Enhancements
 
-1. **Smart Resume**:
-   - Track completed files in resume state
-   - Skip already-copied files on resume
-   - Verify file integrity before skipping
-
-2. **Native Folder Pickers for Mobile**:
-   - iOS: Implement `UIDocumentPickerViewController`
-   - Android: Implement Storage Access Framework with `Intent.ActionOpenDocumentTree`
-
-3. **CLI Implementation**:
+1. **CLI Implementation**:
    - Use `System.CommandLine` for parsing
    - Commands: `copy`, `move`, `sync`, `resume`, `list`
    - Support same arguments as RoboCopy
 
-4. **Shell Extension**:
+2. **Shell Extension**:
    - Windows: Registry-based context menu handler
    - macOS: Finder extension
    - Launch GUI with source pre-filled
 
-5. **Drag-and-Drop for macOS**:
+3. **Drag-and-Drop for macOS**:
    - Implement native macOS drag-drop handler similar to Windows
    - Use NSPasteboard and file promises
 
-6. **Additional Operations**:
+4. **Additional Operations**:
    - Move operations (copy + delete source)
    - Sync operations (bidirectional comparison and sync)
    - Verification mode (compare without copying)
@@ -414,7 +426,7 @@ private string _sourcePath = string.Empty;
 
 ## macOS-Specific Notes
 
-- Requires Xcode and iOS/macOS workloads installed
+- Requires Xcode and macOS workload installed
 - File system permissions may require explicit user consent
 - NSOpenPanel must run on main thread
 

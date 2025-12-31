@@ -34,22 +34,8 @@ public class FileOperationService : IFileOperationService
         IProgress<FileTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var savedOperation = await _resumeService.LoadOperationStateAsync(operationId);
-        if (savedOperation == null)
-        {
-            throw new InvalidOperationException($"Operation {operationId} not found");
-        }
-
-        if (!await _resumeService.CanResumeAsync(operationId))
-        {
-            throw new InvalidOperationException($"Operation {operationId} cannot be resumed");
-        }
-
-        var operation = await _copyEngine.CopyAsync(
-            savedOperation.SourcePath,
-            savedOperation.DestinationPath,
-            progress,
-            cancellationToken);
+        // Use the new smart resume functionality from FileCopyEngine
+        var operation = await _copyEngine.ResumeAsync(operationId, progress, cancellationToken);
 
         _activeOperations[operation.Id] = operation;
         return operation;
