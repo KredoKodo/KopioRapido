@@ -21,8 +21,14 @@ class Program
         // Create root command
         var rootCommand = new RootCommand("KopioRapido - High-performance file copy tool");
 
-        // Add copy command
+        // Add all commands
         rootCommand.Subcommands.Add(CopyCommand.Create(services));
+        rootCommand.Subcommands.Add(MoveCommand.Create(services));
+        rootCommand.Subcommands.Add(SyncCommand.Create(services));
+        rootCommand.Subcommands.Add(MirrorCommand.Create(services));
+        rootCommand.Subcommands.Add(BiDirectionalSyncCommand.Create(services));
+        rootCommand.Subcommands.Add(ResumeCommand.Create(services));
+        rootCommand.Subcommands.Add(ListCommand.Create(services));
 
         // Parse and execute
         return rootCommand.Parse(args).Invoke();
