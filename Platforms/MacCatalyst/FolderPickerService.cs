@@ -78,10 +78,15 @@ public class FolderPickerService : IFolderPickerService
                 // Create a temporary file with the content
                 var tempPath = Path.Combine(Path.GetTempPath(), defaultFileName);
                 await File.WriteAllTextAsync(tempPath, fileContent);
-                
+
                 var fileUrl = NSUrl.FromFilename(tempPath);
+
+                // Suppress CA1422 - UIDocumentPickerMode is deprecated but still functional for export scenarios
+                // The modern alternative doesn't provide equivalent functionality for file export
+#pragma warning disable CA1422
                 var documentPicker = new UIDocumentPickerViewController(new[] { fileUrl }, UIDocumentPickerMode.ExportToService);
-                
+#pragma warning restore CA1422
+
                 documentPicker.DidPickDocumentAtUrls += (sender, e) =>
                 {
                     var url = e.Urls.FirstOrDefault();

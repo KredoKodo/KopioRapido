@@ -67,7 +67,7 @@ public class StorageProfiler
     private const int MAXPATHLEN = 1024;
 
     [StructLayout(LayoutKind.Sequential)]
-    private unsafe struct statfs
+    private unsafe struct StatFs
     {
         public uint f_bsize;      // fundamental file system block size
         public int f_iosize;      // optimal transfer block size
@@ -89,7 +89,7 @@ public class StorageProfiler
     }
 
     [DllImport("libc", EntryPoint = "statfs", SetLastError = true)]
-    private static extern unsafe int native_statfs(string path, statfs* buf);
+    private static extern unsafe int native_statfs(string path, StatFs* buf);
 #endif
 
     private const int BenchmarkSizeMB = 10;
@@ -738,7 +738,7 @@ public class StorageProfiler
     {
         try
         {
-            statfs buf;
+            StatFs buf;
             int result = native_statfs(path, &buf);
             
             if (result != 0)

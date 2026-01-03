@@ -15,7 +15,8 @@
       "WebSearch",
       "Bash(dotnet run:*)",
       "Bash(pkill:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

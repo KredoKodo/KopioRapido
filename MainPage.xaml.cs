@@ -26,10 +26,10 @@ public partial class MainPage : ContentPage
             // Wire up the GraphicsView to the ViewModel (progress circle only)
             // viewModel.SetProgressGraphicsView(ProgressGraphicsView);
 
-#if WINDOWS
+#if WINDOWS || MACCATALYST
             DiagnosticLogger.Log("Registering Loaded event for drag-drop...");
-            // Configure native Windows drag-drop after the page is loaded
-            // Loaded += OnPageLoaded;
+            // Configure native drag-drop after the page is loaded
+            Loaded += OnPageLoaded;
 #endif
 
             DiagnosticLogger.Log("=== MainPage constructor SUCCESS ===");
@@ -41,39 +41,53 @@ public partial class MainPage : ContentPage
         }
     }
 
-#if WINDOWS
+#if WINDOWS || MACCATALYST
     private void OnPageLoaded(object? sender, EventArgs e)
     {
         DiagnosticLogger.Log("=== OnPageLoaded START ===");
         try
         {
-            DiagnosticLogger.Log("Finding SourceDropZone...");
+            DiagnosticLogger.Log("Finding SourceBorder...");
             // Find the Border elements by name and configure native drag-drop
-            if (this.FindByName("SourceDropZone") is Border sourceDropZone)
+            if (this.FindByName("SourceBorder") is Border sourceBorder)
             {
-                DiagnosticLogger.Log("Configuring drag-drop for SourceDropZone...");
-                Platforms.Windows.DragDropHelper.ConfigureDragDrop(sourceDropZone, async path =>
+                DiagnosticLogger.Log("Configuring drag-drop for SourceBorder...");
+#if WINDOWS
+                Platforms.Windows.DragDropHelper.ConfigureDragDrop(sourceBorder, async path =>
                 {
                     await HandleNativeDrop(path, isSource: true);
                 });
+#elif MACCATALYST
+                Platforms.MacCatalyst.DragDropHelper.ConfigureDragDrop(sourceBorder, async path =>
+                {
+                    await HandleNativeDrop(path, isSource: true);
+                }, ViewModel.AddLogMessage);
+#endif
             }
             else
             {
-                DiagnosticLogger.Log("WARNING: SourceDropZone not found!");
+                DiagnosticLogger.Log("WARNING: SourceBorder not found!");
             }
 
-            DiagnosticLogger.Log("Finding DestinationDropZone...");
-            if (this.FindByName("DestinationDropZone") is Border destinationDropZone)
+            DiagnosticLogger.Log("Finding DestinationBorder...");
+            if (this.FindByName("DestinationBorder") is Border destinationBorder)
             {
-                DiagnosticLogger.Log("Configuring drag-drop for DestinationDropZone...");
-                Platforms.Windows.DragDropHelper.ConfigureDragDrop(destinationDropZone, async path =>
+                DiagnosticLogger.Log("Configuring drag-drop for DestinationBorder...");
+#if WINDOWS
+                Platforms.Windows.DragDropHelper.ConfigureDragDrop(destinationBorder, async path =>
                 {
                     await HandleNativeDrop(path, isSource: false);
                 });
+#elif MACCATALYST
+                Platforms.MacCatalyst.DragDropHelper.ConfigureDragDrop(destinationBorder, async path =>
+                {
+                    await HandleNativeDrop(path, isSource: false);
+                }, ViewModel.AddLogMessage);
+#endif
             }
             else
             {
-                DiagnosticLogger.Log("WARNING: DestinationDropZone not found!");
+                DiagnosticLogger.Log("WARNING: DestinationBorder not found!");
             }
 
             DiagnosticLogger.Log("=== OnPageLoaded SUCCESS ===");
@@ -88,7 +102,7 @@ public partial class MainPage : ContentPage
     {
         if (ViewModel.IsCopying)
         {
-            await DisplayAlert("Operation in Progress",
+            await DisplayAlertAsync("Operation in Progress",
                 "Cannot change paths while copying is in progress.",
                 "OK");
             return;
@@ -131,7 +145,7 @@ public partial class MainPage : ContentPage
             }
             else
             {
-                await DisplayAlert("Invalid Path",
+                await DisplayAlertAsync("Invalid Path",
                     $"The path does not exist: {path}",
                     "OK");
             }
@@ -139,7 +153,7 @@ public partial class MainPage : ContentPage
         catch (Exception ex)
         {
             ViewModel.AddLogMessage($"Drop error: {ex.Message}");
-            await DisplayAlert("Error",
+            await DisplayAlertAsync("Error",
                 $"Failed to process dropped item: {ex.Message}",
                 "OK");
         }
@@ -181,9 +195,9 @@ public partial class MainPage : ContentPage
             // Actually, MAUI coordinates are DIPs, Windows Windowing is pixels.
             // We might need to multiply by density.
             var density = DeviceDisplay.MainDisplayInfo.Density;
-            
+
             appWindow.Move(new Windows.Graphics.PointInt32(
-                _windowStartPosition.X + (int)(e.TotalX * density), 
+                _windowStartPosition.X + (int)(e.TotalX * density),
                 _windowStartPosition.Y + (int)(e.TotalY * density)));
         }
 #endif
