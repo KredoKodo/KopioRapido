@@ -1,22 +1,35 @@
 # KopioRapido
 
-A cross-platform, high-performance file copying application built with .NET 10 and .NET MAUI. KopioRapido provides RoboCopy-like functionality with a modern graphical interface and command-line options, leveraging delta synchronization for efficient file transfers.
+A cross-platform, high-performance file copying application built with .NET 10 and .NET MAUI. KopioRapido provides RoboCopy-like functionality with both a modern graphical interface and a powerful command-line interface, leveraging delta synchronization and intelligent transfer optimization for efficient file operations.
 
 ## Features
 
-- **⚡ High-Speed Copying** - Optimized file transfer with smart delta synchronization
+### Core Capabilities
+- **⚡ High-Speed Copying** - Intelligent transfer engine with automatic strategy selection
+- **🗜️ Smart Compression** - Transparent Brotli compression for network transfers
+- **🔄 Delta Sync** - FastRsyncNet integration for efficient file updates
+- **📊 Real-Time Monitoring** - Adaptive concurrency with performance tracking
 - **🔄 Resumable Operations** - Automatically resume interrupted transfers
-- **📊 Real-Time Progress** - Dual progress bars showing overall and per-file progress
-- **📈 Speed Monitoring** - Current speed, average speed, and ETA calculations
-- **📝 Detailed Logging** - Complete operation logs for troubleshooting
-- **🖥️ Cross-Platform** - Runs on Windows, macOS, iOS, and Android
-- **🎯 Native Folder Pickers** - Platform-specific folder selection dialogs
-- **🎯 Simple Interface** - Dual-pane design for easy source/destination selection
+- **📝 Comprehensive Logging** - Detailed emoji-based logs for troubleshooting
+
+### Operation Types
+- **Copy** - Standard copy (overwrites existing files)
+- **Move** - Copy then delete source files
+- **Sync** - One-way sync (missing/newer files only)
+- **Mirror** - One-way sync with deletions
+- **BiDirectional Sync** - Two-way sync (newer timestamp wins)
+
+### Dual Interface
+- **🖥️ GUI Application** - Dual-pane MAUI interface with drag-and-drop support
+- **⌨️ CLI Tool** - Full-featured command-line interface with JSON output
+- **🎯 Native Integration** - Platform-specific folder pickers and drag-drop
 
 ## Technology
 
 - **.NET 10** - Latest .NET framework
-- **.NET MAUI** - Modern cross-platform UI framework
+- **.NET MAUI** - Modern cross-platform UI framework (GUI)
+- **System.CommandLine 2.0.1** - Modern CLI framework
+- **Spectre.Console** - Rich terminal output with TTY detection
 - **FastRsyncNet** - Delta synchronization for efficient updates
 - **MVVM Pattern** - Clean architecture with dependency injection
 
@@ -30,45 +43,109 @@ A cross-platform, high-performance file copying application built with .NET 10 a
 
 ### For Running
 - **.NET 10 Runtime**
-- Supported platforms: Windows 10+, macOS 11+, iOS 14+, Android 5.0+
+- Supported platforms:
+  - **GUI**: Windows 10+, macOS 11+
+  - **CLI**: Windows, macOS, Linux (cross-platform)
 
 ## Getting Started
 
 ### Build the Project
 
 ```bash
-# Restore NuGet packages
-dotnet restore
-
-# Build for all platforms
+# Build all projects
 dotnet build
 
-# Build for specific platform
+# Build GUI only
+dotnet build KopioRapido.csproj
+
+# Build CLI only
+dotnet build KopioRapido.CLI/KopioRapido.CLI.csproj
+
+# Build for specific platform (GUI)
 dotnet build -f net10.0-windows10.0.19041.0
 dotnet build -f net10.0-maccatalyst
 ```
 
 ### Run the Application
 
-#### Windows
+#### GUI Application
+
+**Windows**:
 ```bash
 dotnet run --framework net10.0-windows10.0.19041.0
 ```
 
-#### macOS
+**macOS**:
 ```bash
 dotnet run --framework net10.0-maccatalyst
 ```
 
+#### CLI Tool
+
+```bash
+# Run directly
+dotnet run --project KopioRapido.CLI -- <command> [options]
+
+# Or build and run executable
+dotnet build KopioRapido.CLI
+./KopioRapido.CLI/bin/Debug/net10.0/kopiorapido <command> [options]
+```
+
 ## Usage
+
+### Command-Line Interface
+
+#### Basic Commands
+
+```bash
+# Copy files
+kopiorapido copy /source /destination
+
+# Move files (copy then delete source)
+kopiorapido move /source /destination
+
+# One-way sync (missing/newer files only)
+kopiorapido sync /source /destination
+
+# Mirror (one-way sync with deletions)
+kopiorapido mirror /source /destination
+
+# Two-way sync (newer timestamp wins)
+kopiorapido bidirectional-sync /path1 /path2
+
+# List resumable operations
+kopiorapido list
+
+# Resume interrupted operation
+kopiorapido resume <operation-id>
+
+# Show version
+kopiorapido --version
+
+# Show help
+kopiorapido --help
+kopiorapido copy --help
+```
+
+#### Command Options
+
+Each operation command supports:
+- Analysis (dry-run) mode
+- Custom transfer strategies
+- Compression control
+- Delta sync control
+- Concurrency settings
+
+*Note: Advanced options will be documented in CLI_USAGE.md*
 
 ### Graphical Interface
 
-1. **Select Source**: Click "Select Source Folder" - native OS dialog appears
-2. **Select Destination**: Click "Select Destination Folder" - native OS dialog appears
-3. **Start Copy**: Click the "Start Copy" button
-4. **Monitor Progress**: View real-time progress, speed, and activity logs
-5. **Cancel if Needed**: Click "Cancel" to stop the operation
+1. **Select Source**: Click "Select Source Folder" or drag-and-drop
+2. **Select Destination**: Click "Select Destination Folder" or drag-and-drop
+3. **Choose Operation**: Select Copy, Move, Sync, Mirror, or BiDirectional Sync
+4. **Start Operation**: Click the operation button
+5. **Monitor Progress**: View real-time progress, speed, and compression stats
+6. **Cancel if Needed**: Click "Cancel" to stop (operation remains resumable)
 
 ## How It Works
 

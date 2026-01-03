@@ -4,30 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-KopioRapido is a desktop file copying application built with .NET 10 and .NET MAUI, targeting **Windows and macOS only**. It provides RoboCopy-like functionality with a modern GUI, leveraging FastRsyncNet for efficient delta synchronization and an intelligent transfer engine for optimized performance.
+KopioRapido is a cross-platform file copying application built with .NET 10, providing both a MAUI GUI and a command-line interface. It targets **Windows and macOS** for the GUI, and **Windows/macOS/Linux** for the CLI. It provides RoboCopy-like functionality leveraging FastRsyncNet for efficient delta synchronization and an intelligent transfer engine for optimized performance.
 
 ## Key Features
 
+- **Dual Interface**: Full-featured GUI (MAUI) and CLI (System.CommandLine)
 - **Multiple Operation Types**: Copy, Move, Sync, Mirror, and BiDirectionalSync with intelligent file comparison
 - **Intelligent Transfer Engine**: Automatically analyzes storage devices and file characteristics to select optimal copy strategies
 - **Adaptive Performance**: Real-time monitoring and concurrency adjustment based on actual transfer speeds
 - **Transparent Compression**: Brotli compression for network transfers (saves bandwidth, transparent to user)
 - **Delta Sync**: FastRsyncNet integration for efficient resume and incremental updates
 - **Smart Parallelization**: Automatic selection of sequential vs parallel mode based on storage type and file characteristics
-- **Native Platform Integration**: Direct platform APIs for drag-and-drop and folder selection
-- **Adaptive Window Sizing**: Golden ratio proportions (1.618:1) with intelligent screen-aware sizing and persistent window state
+- **Native Platform Integration**: Direct platform APIs for drag-and-drop and folder selection (GUI)
+- **Rich CLI Output**: Spectre.Console with TTY detection, JSON output for scripting
+- **Adaptive Window Sizing**: Golden ratio proportions (1.618:1) with intelligent screen-aware sizing
 
 ## Build Commands
 
 ```bash
-# Build for all platforms
+# Build all projects (GUI + CLI + Core)
 dotnet build
 
-# Run on Windows
+# Build GUI only
+dotnet build KopioRapido.csproj
+
+# Build CLI only
+dotnet build KopioRapido.CLI/KopioRapido.CLI.csproj
+
+# Run GUI on Windows
 dotnet run --framework net10.0-windows10.0.19041.0
 
-# Run on macOS
+# Run GUI on macOS
 dotnet run --framework net10.0-maccatalyst
+
+# Run CLI
+dotnet run --project KopioRapido.CLI -- <command> [options]
 
 # Clean build
 dotnet clean && dotnet build
@@ -35,7 +46,27 @@ dotnet clean && dotnet build
 
 ## Architecture
 
-### Core Components
+### Project Structure
+
+```
+KopioRapido/
+├── KopioRapido.Core/          # Shared business logic
+│   ├── Core/                  # Engines (FileCopyEngine, etc.)
+│   ├── Services/              # Core services (all operations)
+│   └── Models/                # Data models
+├── KopioRapido/               # MAUI GUI application
+│   ├── ViewModels/            # MVVM view models
+│   ├── MainPage.xaml          # Main UI
+│   ├── Services/              # IFolderPickerService (GUI-only)
+│   └── MauiProgram.cs         # GUI DI setup
+└── KopioRapido.CLI/           # Command-line interface
+    ├── Commands/              # CLI command implementations
+    ├── Output/                # Console + JSON formatters
+    ├── Program.cs             # CLI entry point
+    └── ServiceConfiguration.cs # CLI DI setup
+```
+
+### Core Components (KopioRapido.Core)
 
 - **Core/FileCopyEngine.cs** - Main copy engine with FastRsyncNet integration
   - `CopyAsync()` - Standard copy operation (overwrites existing files)
@@ -56,7 +87,7 @@ dotnet clean && dotnet build
 
 ### Service Layer
 
-All services registered as singletons in `MauiProgram.cs`:
+All services registered as singletons in both `MauiProgram.cs` (GUI) and `ServiceConfiguration.cs` (CLI):
 
 | Interface | Purpose |
 |-----------|---------|
@@ -249,7 +280,38 @@ See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADA
 - **Comprehensive Logging**: Detailed emoji-based logging for debugging drop operations
 - **Manual Fallback**: Folder selection buttons remain fully functional
 
+### ✅ CLI Implementation (2026-01-03)
+- **Complete CLI Interface**: All 7 commands implemented (copy, move, sync, mirror, bidirectional-sync, resume, list)
+- **System.CommandLine 2.0.1**: Modern command-line parsing with automatic help generation
+- **Rich Output**: Spectre.Console for interactive terminals, JSON for scripting
+- **TTY Detection**: Auto-detects piped output, can be overridden with --plain/--color flags
+- **Shared Core Logic**: CLI and GUI share identical business logic via KopioRapido.Core
+- **Service Configuration**: Full DI setup with all core services available to CLI
+- **Commands Work**: Help system functional, all commands parse correctly
+- **Resume/List**: Basic resume state viewing and operation listing implemented
+
+## CLI Usage Examples
+
+```bash
+# Basic operations
+kopiorapido copy /source /dest
+kopiorapido move /source /dest
+kopiorapido sync /source /dest
+kopiorapido mirror /source /dest
+kopiorapido bidirectional-sync /path1 /path2
+
+# Management
+kopiorapido list                    # List resumable operations
+kopiorapido resume <operation-id>   # Resume operation
+
+# Help
+kopiorapido --help                  # Show all commands
+kopiorapido copy --help             # Show command-specific help
+kopiorapido --version               # Show version
+```
+
 ## Current Limitations
 
-- CLI interface: Planned but not yet implemented
+- CLI advanced options: --analyze, --strategy, --max-concurrent not yet wired (framework ready)
 - Shell integration: Context menu handlers not implemented
+- Resume execution: Resume command shows state but doesn't execute (Core API ready)
