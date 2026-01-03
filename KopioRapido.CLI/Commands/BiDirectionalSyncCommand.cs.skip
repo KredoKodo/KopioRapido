@@ -1,0 +1,16 @@
+using System.CommandLine;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace KopioRapido.CLI.Commands;
+
+public class BiDirectionalSyncCommand : BaseCommand
+{
+    public static Command Create(IServiceProvider services)
+    {
+        var cmd = new Command("bidirectional-sync", "Two-way sync (newer timestamp wins)");
+        // TODO: Add full implementation similar to CopyCommand
+        return cmd;
+    }
+
+    private BiDirectionalSyncCommand(IServiceProvider services) : base(services) { }
+}

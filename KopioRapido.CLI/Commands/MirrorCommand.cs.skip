@@ -1,0 +1,16 @@
+using System.CommandLine;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace KopioRapido.CLI.Commands;
+
+public class MirrorCommand : BaseCommand
+{
+    public static Command Create(IServiceProvider services)
+    {
+        var cmd = new Command("mirror", "Mirror source to destination (includes deletions)");
+        // TODO: Add full implementation similar to CopyCommand
+        return cmd;
+    }
+
+    private MirrorCommand(IServiceProvider services) : base(services) { }
+}

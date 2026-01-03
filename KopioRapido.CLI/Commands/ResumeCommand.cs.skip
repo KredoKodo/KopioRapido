@@ -1,0 +1,19 @@
+using System.CommandLine;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace KopioRapido.CLI.Commands;
+
+public class ResumeCommand : BaseCommand
+{
+    public static Command Create(IServiceProvider services)
+    {
+        var cmd = new Command("resume", "Resume an interrupted operation");
+        var operationIdArg = new Argument<string>("operation-id", "Operation ID to resume");
+        cmd.AddArgument(operationIdArg);
+        
+        // TODO: Add full implementation
+        return cmd;
+    }
+
+    private ResumeCommand(IServiceProvider services) : base(services) { }
+}
