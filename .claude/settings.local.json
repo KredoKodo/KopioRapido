@@ -13,7 +13,8 @@
       "Bash(powershell -Command \"Remove-Item -Recurse -Force ''Platforms\\\\iOS''\")",
       "Bash(powershell -Command \"Remove-Item -Recurse -Force ''Platforms\\\\Android''\")",
       "WebSearch",
-      "Bash(dotnet run:*)"
+      "Bash(dotnet run:*)",
+      "Bash(pkill:*)"
     ]
   }
 }

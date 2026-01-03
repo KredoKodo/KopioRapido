@@ -8,16 +8,19 @@ public class FileOperationService : IFileOperationService
     private readonly FileCopyEngine _copyEngine;
     private readonly IResumeService _resumeService;
     private readonly TransferIntelligenceEngine _intelligenceEngine;
+    private readonly FileComparisonHelper _comparisonHelper;
     private readonly Dictionary<string, CopyOperation> _activeOperations;
 
     public FileOperationService(
         FileCopyEngine copyEngine,
         IResumeService resumeService,
-        TransferIntelligenceEngine intelligenceEngine)
+        TransferIntelligenceEngine intelligenceEngine,
+        FileComparisonHelper comparisonHelper)
     {
         _copyEngine = copyEngine;
         _resumeService = resumeService;
         _intelligenceEngine = intelligenceEngine;
+        _comparisonHelper = comparisonHelper;
         _activeOperations = new Dictionary<string, CopyOperation>();
     }
 
@@ -81,5 +84,65 @@ public class FileOperationService : IFileOperationService
     public async Task<IEnumerable<CopyOperation>> GetPendingOperationsAsync()
     {
         return await _resumeService.GetResumableOperationsAsync();
+    }
+
+    public async Task<CopyOperation> StartOperationAsync(
+        string source,
+        string destination,
+        CopyOperationType operationType,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default,
+        TransferStrategy? strategy = null)
+    {
+        CopyOperation operation;
+
+        switch (operationType)
+        {
+            case CopyOperationType.Copy:
+                operation = await _copyEngine.CopyAsync(source, destination, progress, cancellationToken, strategy);
+                break;
+
+            case CopyOperationType.Move:
+                operation = await _copyEngine.MoveAsync(source, destination, progress, cancellationToken, strategy);
+                break;
+
+            case CopyOperationType.Sync:
+                operation = await _copyEngine.SyncAsync(source, destination, progress, cancellationToken, strategy);
+                break;
+
+            case CopyOperationType.Mirror:
+                operation = await _copyEngine.MirrorAsync(source, destination, progress, cancellationToken, strategy);
+                break;
+
+            case CopyOperationType.BiDirectionalSync:
+                operation = await _copyEngine.BiDirectionalSyncAsync(source, destination, progress, cancellationToken, strategy);
+                break;
+
+            default:
+                throw new ArgumentException($"Unsupported operation type: {operationType}", nameof(operationType));
+        }
+
+        _activeOperations[operation.Id] = operation;
+        return operation;
+    }
+
+    public async Task<SyncOperationSummary> AnalyzeSyncAsync(
+        string sourcePath,
+        string destinationPath,
+        CopyOperationType operationType,
+        CancellationToken cancellationToken = default)
+    {
+        var comparison = await _comparisonHelper.CompareDirectoriesAsync(sourcePath, destinationPath, cancellationToken);
+        var plan = _comparisonHelper.BuildSyncPlan(sourcePath, destinationPath, comparison, operationType);
+
+        return new SyncOperationSummary
+        {
+            FilesToCopy = plan.TotalFilesToCopy,
+            FilesToDelete = plan.TotalFilesToDelete,
+            IdenticalFiles = comparison.IdenticalFiles.Count,
+            TotalBytesToCopy = plan.TotalBytesToCopy,
+            TotalBytesToDelete = plan.FilesToDelete.Sum(f => new FileInfo(f).Length),
+            OperationType = operationType
+        };
     }
 }

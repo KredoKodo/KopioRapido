@@ -8,6 +8,7 @@ KopioRapido is a desktop file copying application built with .NET 10 and .NET MA
 
 ## Key Features
 
+- **Multiple Operation Types**: Copy, Move, Sync, Mirror, and BiDirectionalSync with intelligent file comparison
 - **Intelligent Transfer Engine**: Automatically analyzes storage devices and file characteristics to select optimal copy strategies
 - **Adaptive Performance**: Real-time monitoring and concurrency adjustment based on actual transfer speeds
 - **Transparent Compression**: Brotli compression for network transfers (saves bandwidth, transparent to user)
@@ -37,10 +38,19 @@ dotnet clean && dotnet build
 ### Core Components
 
 - **Core/FileCopyEngine.cs** - Main copy engine with FastRsyncNet integration
-  - `CopyAsync()` - Entry point wrapping operations in retry logic
+  - `CopyAsync()` - Standard copy operation (overwrites existing files)
+  - `MoveAsync()` - Copies files then deletes source files after successful transfer
+  - `SyncAsync()` - One-way sync (only copies missing/newer files from source)
+  - `MirrorAsync()` - Makes destination exact mirror of source (includes deletions)
+  - `BiDirectionalSyncAsync()` - Two-way sync with newer-timestamp-wins conflict resolution
   - `CopyFileWithDeltaSyncAsync()` - Delta sync for files >10MB when destination exists
   - `CopyFileDirectAsync()` - Standard streaming copy with progress
   - `CopyDirectoryAsync()` - Recursive directory copying
+
+- **Core/FileComparisonHelper.cs** - File comparison and sync planning
+  - `CompareDirectoriesAsync()` - Compares source/destination by size + timestamp
+  - `BuildSyncPlan()` - Determines which files to copy/delete based on operation type
+  - Uses fast comparison (size + timestamp, not hash) for large directory performance
 
 - **Core/RetryHelper.cs** - Exponential backoff retry with transient error detection (network, IO, file locks, Windows error codes like ERROR_SHARING_VIOLATION)
 
@@ -183,8 +193,37 @@ Don't use `DropGestureRecognizer`. See Native Drag-and-Drop section above.
 
 See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADAPTIVE_WINDOW_SIZING.md` for details.
 
+### ✅ Storage Detection (2026-01-03)
+- **Windows SSD Detection**: P/Invoke DeviceIoControl queries StorageDeviceSeekPenaltyProperty to distinguish SSD from HDD
+- **Windows USB Detection**: WMI queries match USB controllers (xHCI=USB3, EHCI=USB2) and device properties
+- **macOS SSD Detection**: `diskutil info` parses "Solid State: Yes" with APFS filesystem fallback
+- **macOS USB Detection**: `diskutil info` and `system_profiler SPUSBDataType` parse USB speed indicators
+- **Graceful Fallbacks**: Assumes SSD/USB3 on detection failures (optimistic, allows benchmarking to compensate)
+- **Dependencies**: System.Management (Windows-only) for WMI, built-in CLI tools on macOS
+
+### ✅ Multiple Operation Types (2026-01-03)
+- **Five Operation Types Implemented**:
+  1. **Copy** - Standard copy (overwrites existing files, no deletions)
+  2. **Move** - Copy then delete source files (frees source space)
+  3. **Sync** - One-way sync (only copies missing/newer files, preserves destination-only files)
+  4. **Mirror** - One-way sync with deletions (makes destination exact match of source)
+  5. **BiDirectionalSync** - Two-way sync (newer timestamp wins, copies missing files both directions)
+
+- **UI Implementation**:
+  - Dropdown selector in middle pane between source/destination
+  - Dynamic description panel with operation-specific explanations
+  - Yellow info boxes for safe operations (Copy)
+  - Red warning boxes for destructive operations (Move, Mirror)
+  - Start button text dynamically updates based on selected operation
+
+- **Architecture**:
+  - `FileComparisonHelper` compares directories by size + timestamp (fast, no hash)
+  - `IFileOperationService.StartOperationAsync()` routes to appropriate engine method
+  - Each operation type has dedicated method in `FileCopyEngine`
+  - Move operation only deletes source files, never destination files
+  - Resume support works across all operation types
+
 ## Current Limitations
 
-- CLI interface: Structure exists in `CLI/` but not implemented
+- CLI interface: Planned but not yet implemented
 - Shell integration: Context menu handlers not implemented
-- Storage detection: Needs refinement for USB 2.0/3.0 differentiation and Windows SSD detection

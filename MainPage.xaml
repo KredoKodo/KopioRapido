@@ -18,7 +18,7 @@
                Margin="0,0,0,20"/>
 
         <!-- Dual Pane for Source and Destination (Hidden during copy) -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,20,*" Margin="0,0,0,20" IsVisible="{Binding IsCopying, Converter={StaticResource InverseBoolConverter}}">
+        <Grid Grid.Row="1" ColumnDefinitions="*,250,*" Margin="0,0,0,20" IsVisible="{Binding IsCopying, Converter={StaticResource InverseBoolConverter}}">
 
             <!-- Source Pane -->
             <Border x:Name="SourceBorder"
@@ -181,10 +181,113 @@
                 </Grid>
             </Border>
 
-            <!-- Separator -->
-            <BoxView Grid.Column="1"
-                     WidthRequest="20"
-                     Color="Transparent"/>
+            <!-- Operation Type Selector -->
+            <Grid Grid.Column="1" RowDefinitions="Auto,15,*" Padding="15,3,15,0">
+
+                <!-- Dropdown at top -->
+                <Picker Grid.Row="0"
+                        Title="Click to select operation type..."
+                        SelectedIndex="-1"
+                        FontSize="13"
+                        HorizontalOptions="Fill"
+                        SelectedIndexChanged="OnOperationChanged">
+                    <Picker.Items>
+                        <x:String>Copy</x:String>
+                        <x:String>Move</x:String>
+                        <x:String>Sync</x:String>
+                        <x:String>Mirror</x:String>
+                        <x:String>BiDirectionalSync</x:String>
+                    </Picker.Items>
+                </Picker>
+
+                <!-- Spacer -->
+                <!-- Grid.Row="1" is the spacer -->
+
+                <!-- Description Pane -->
+                <Border Grid.Row="2"
+                        BackgroundColor="{AppThemeBinding Light=#F8F9FA, Dark=#2C2C2E}"
+                        Stroke="{AppThemeBinding Light=#DEE2E6, Dark=#3C3C3E}"
+                        StrokeThickness="1"
+                        Padding="0"
+                        VerticalOptions="Fill">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="8"/>
+                    </Border.StrokeShape>
+
+                    <Grid RowDefinitions="Auto,*">
+                        <!-- Header -->
+                        <Border Grid.Row="0"
+                                BackgroundColor="{AppThemeBinding Light=#6C757D, Dark=#48484A}"
+                                Padding="12,10">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="8,8,0,0"/>
+                            </Border.StrokeShape>
+                            <Label Text="Operation Type Description"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="White"
+                                   HorizontalOptions="Center"/>
+                        </Border>
+
+                        <!-- Content Area -->
+                        <VerticalStackLayout Grid.Row="1" Padding="15" Spacing="12">
+
+                            <!-- Operation Description -->
+                            <Label Text="{Binding OperationDescription}"
+                                   FontSize="12"
+                                   LineBreakMode="WordWrap"
+                                   TextColor="{AppThemeBinding Light=#495057, Dark=#AEAEB2}"/>
+
+                            <!-- Info Box (for informational messages) -->
+                            <Border IsVisible="{Binding ShowOperationInfo}"
+                                    BackgroundColor="{AppThemeBinding Light=#FFFBEB, Dark=#78350F}"
+                                    Stroke="{AppThemeBinding Light=#FCD34D, Dark=#FCD34D}"
+                                    StrokeThickness="2"
+                                    Padding="12">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="6"/>
+                                </Border.StrokeShape>
+                                <HorizontalStackLayout Spacing="8">
+                                    <Label Text="ℹ️"
+                                           FontSize="16"
+                                           VerticalOptions="Start"
+                                           Margin="0,2,0,0"/>
+                                    <Label Text="{Binding OperationInfoMessage}"
+                                           FontSize="11"
+                                           LineBreakMode="WordWrap"
+                                           TextColor="{AppThemeBinding Light=#92400E, Dark=#FDE68A}"
+                                           VerticalOptions="Center"
+                                           HorizontalOptions="Fill"/>
+                                </HorizontalStackLayout>
+                            </Border>
+
+                            <!-- Warning Box (for destructive operations) -->
+                            <Border IsVisible="{Binding ShowOperationWarning}"
+                                    BackgroundColor="{AppThemeBinding Light=#FEE, Dark=#4A1515}"
+                                    Stroke="{AppThemeBinding Light=#DC3545, Dark=#DC3545}"
+                                    StrokeThickness="2"
+                                    Padding="12">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="6"/>
+                                </Border.StrokeShape>
+                                <VerticalStackLayout Spacing="6">
+                                    <Label Text="⚠️ CAUTION"
+                                           FontSize="11"
+                                           FontAttributes="Bold"
+                                           TextColor="{AppThemeBinding Light=#DC3545, Dark=#FF6B6B}"
+                                           HorizontalOptions="Center"/>
+                                    <Label Text="{Binding OperationWarningMessage}"
+                                           FontSize="11"
+                                           LineBreakMode="WordWrap"
+                                           TextColor="{AppThemeBinding Light=#721C24, Dark=#FFC9C9}"
+                                           HorizontalTextAlignment="Center"/>
+                                </VerticalStackLayout>
+                            </Border>
+
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+            </Grid>
 
             <!-- Destination Pane -->
             <Border x:Name="DestinationBorder"

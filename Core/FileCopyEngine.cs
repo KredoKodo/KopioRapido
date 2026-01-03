@@ -15,6 +15,7 @@ public class FileCopyEngine
     private readonly IProgressTrackerService _progressTracker;
     private readonly IResumeService _resumeService;
     private readonly IPerformanceMonitorService _performanceMonitor;
+    private readonly FileComparisonHelper _comparisonHelper;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _operations;
     private readonly RetryConfiguration _retryConfig;
     private const long DELTA_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -23,12 +24,14 @@ public class FileCopyEngine
         ILoggingService loggingService,
         IProgressTrackerService progressTracker,
         IResumeService resumeService,
-        IPerformanceMonitorService performanceMonitor)
+        IPerformanceMonitorService performanceMonitor,
+        FileComparisonHelper comparisonHelper)
     {
         _loggingService = loggingService;
         _progressTracker = progressTracker;
         _resumeService = resumeService;
         _performanceMonitor = performanceMonitor;
+        _comparisonHelper = comparisonHelper;
         _operations = new ConcurrentDictionary<string, CancellationTokenSource>();
         _retryConfig = new RetryConfiguration(); // Use default configuration
     }
@@ -38,12 +41,14 @@ public class FileCopyEngine
         IProgressTrackerService progressTracker,
         IResumeService resumeService,
         IPerformanceMonitorService performanceMonitor,
+        FileComparisonHelper comparisonHelper,
         RetryConfiguration retryConfig)
     {
         _loggingService = loggingService;
         _progressTracker = progressTracker;
         _resumeService = resumeService;
         _performanceMonitor = performanceMonitor;
+        _comparisonHelper = comparisonHelper;
         _operations = new ConcurrentDictionary<string, CancellationTokenSource>();
         _retryConfig = retryConfig;
     }
@@ -947,5 +952,383 @@ public class FileCopyEngine
         }
 
         return $"{size:F2} {suffixes[suffixIndex]}";
+    }
+
+    // New operation type implementations
+
+    public async Task<CopyOperation> MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default,
+        TransferStrategy? strategy = null)
+    {
+        // Phase 1: Copy files
+        var operation = await CopyAsync(sourcePath, destinationPath, progress, cancellationToken, strategy);
+
+        // Phase 2: Delete source files if copy was successful
+        if (operation.Status == CopyStatus.Completed)
+        {
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                "Copy phase completed. Starting source file deletion...");
+
+            operation.OperationType = CopyOperationType.Move;
+            await DeleteSourceFilesAsync(operation, sourcePath, progress, cancellationToken);
+        }
+
+        return operation;
+    }
+
+    public async Task<CopyOperation> SyncAsync(
+        string sourcePath,
+        string destinationPath,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default,
+        TransferStrategy? strategy = null)
+    {
+        var operation = new CopyOperation
+        {
+            SourcePath = sourcePath,
+            DestinationPath = destinationPath,
+            OperationType = CopyOperationType.Sync,
+            Status = CopyStatus.InProgress,
+            StartTime = DateTime.UtcNow,
+            CanResume = true
+        };
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _operations.TryAdd(operation.Id, cts);
+
+        try
+        {
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Starting sync operation from '{sourcePath}' to '{destinationPath}'");
+
+            // Compare directories
+            var comparison = await _comparisonHelper.CompareDirectoriesAsync(sourcePath, destinationPath, cts.Token);
+            var plan = _comparisonHelper.BuildSyncPlan(sourcePath, destinationPath, comparison, CopyOperationType.Sync);
+
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Sync analysis: {plan.TotalFilesToCopy} files to copy, {comparison.IdenticalFiles.Count} identical (skipped)");
+
+            // Mark identical files as already completed
+            foreach (var identicalFile in plan.IdenticalFilesToSkip)
+            {
+                MarkFileAsCompleted(operation, identicalFile, sourcePath);
+            }
+
+            // Update operation totals
+            operation.TotalFiles = plan.TotalFilesToCopy;
+            operation.TotalBytes = plan.TotalBytesToCopy;
+
+            // Copy only files that need to be copied
+            await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);
+
+            operation.Status = CopyStatus.Completed;
+            operation.EndTime = DateTime.UtcNow;
+
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Sync operation completed: {operation.FilesTransferred} files synced");
+        }
+        catch (OperationCanceledException)
+        {
+            operation.Status = CopyStatus.Cancelled;
+            await _loggingService.LogAsync(operation.Id, LogLevel.Warning, "Sync operation cancelled");
+        }
+        catch (Exception ex)
+        {
+            operation.Status = CopyStatus.Failed;
+            operation.ErrorMessage = ex.Message;
+            await _loggingService.LogAsync(operation.Id, LogLevel.Error, $"Sync operation failed: {ex.Message}");
+        }
+        finally
+        {
+            _operations.TryRemove(operation.Id, out _);
+        }
+
+        return operation;
+    }
+
+    public async Task<CopyOperation> MirrorAsync(
+        string sourcePath,
+        string destinationPath,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default,
+        TransferStrategy? strategy = null)
+    {
+        var operation = new CopyOperation
+        {
+            SourcePath = sourcePath,
+            DestinationPath = destinationPath,
+            OperationType = CopyOperationType.Mirror,
+            Status = CopyStatus.InProgress,
+            StartTime = DateTime.UtcNow,
+            CanResume = true
+        };
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _operations.TryAdd(operation.Id, cts);
+
+        try
+        {
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Starting mirror operation from '{sourcePath}' to '{destinationPath}'");
+
+            // Compare directories
+            var comparison = await _comparisonHelper.CompareDirectoriesAsync(sourcePath, destinationPath, cts.Token);
+            var plan = _comparisonHelper.BuildSyncPlan(sourcePath, destinationPath, comparison, CopyOperationType.Mirror);
+
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Mirror analysis: {plan.TotalFilesToCopy} files to copy, {plan.TotalFilesToDelete} files to delete");
+
+            // Mark identical files as already completed
+            foreach (var identicalFile in plan.IdenticalFilesToSkip)
+            {
+                MarkFileAsCompleted(operation, identicalFile, sourcePath);
+            }
+
+            // Update operation totals
+            operation.TotalFiles = plan.TotalFilesToCopy;
+            operation.TotalBytes = plan.TotalBytesToCopy;
+
+            // Phase 1: Copy missing/newer files
+            await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);
+
+            // Phase 2: Delete extra files in destination
+            if (plan.FilesToDelete.Count > 0)
+            {
+                await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                    $"Deleting {plan.FilesToDelete.Count} extra files from destination...");
+
+                foreach (var fileToDelete in plan.FilesToDelete)
+                {
+                    try
+                    {
+                        File.Delete(fileToDelete);
+                        await _loggingService.LogAsync(operation.Id, LogLevel.Info, $"Deleted: {Path.GetFileName(fileToDelete)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        await _loggingService.LogAsync(operation.Id, LogLevel.Warning,
+                            $"Failed to delete {fileToDelete}: {ex.Message}");
+                    }
+                }
+
+                // Clean up empty directories
+                await DeleteEmptyDirectoriesAsync(destinationPath, operation);
+            }
+
+            operation.Status = CopyStatus.Completed;
+            operation.EndTime = DateTime.UtcNow;
+
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Mirror operation completed: {operation.FilesTransferred} files synced, {plan.FilesToDelete.Count} files deleted");
+        }
+        catch (OperationCanceledException)
+        {
+            operation.Status = CopyStatus.Cancelled;
+            await _loggingService.LogAsync(operation.Id, LogLevel.Warning, "Mirror operation cancelled");
+        }
+        catch (Exception ex)
+        {
+            operation.Status = CopyStatus.Failed;
+            operation.ErrorMessage = ex.Message;
+            await _loggingService.LogAsync(operation.Id, LogLevel.Error, $"Mirror operation failed: {ex.Message}");
+        }
+        finally
+        {
+            _operations.TryRemove(operation.Id, out _);
+        }
+
+        return operation;
+    }
+
+    public async Task<CopyOperation> BiDirectionalSyncAsync(
+        string sourcePath,
+        string destinationPath,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default,
+        TransferStrategy? strategy = null)
+    {
+        var operation = new CopyOperation
+        {
+            SourcePath = sourcePath,
+            DestinationPath = destinationPath,
+            OperationType = CopyOperationType.BiDirectionalSync,
+            Status = CopyStatus.InProgress,
+            StartTime = DateTime.UtcNow,
+            CanResume = true
+        };
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _operations.TryAdd(operation.Id, cts);
+
+        try
+        {
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Starting bidirectional sync between '{sourcePath}' and '{destinationPath}'");
+
+            // Compare directories
+            var comparison = await _comparisonHelper.CompareDirectoriesAsync(sourcePath, destinationPath, cts.Token);
+            var plan = _comparisonHelper.BuildSyncPlan(sourcePath, destinationPath, comparison, CopyOperationType.BiDirectionalSync);
+
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Bi-sync analysis: {plan.FilesToCopy.Count} files source→dest, {plan.FilesToCopyReverse.Count} files dest→source, {plan.ConflictsToLog.Count} conflicts");
+
+            // Log conflicts
+            foreach (var conflict in plan.ConflictsToLog)
+            {
+                await _loggingService.LogAsync(operation.Id, LogLevel.Warning,
+                    $"Conflict detected (same timestamp, different size): {conflict}");
+            }
+
+            // Update operation totals
+            operation.TotalFiles = plan.TotalFilesToCopy;
+            operation.TotalBytes = plan.TotalBytesToCopy;
+
+            // Phase 1: Copy from source to destination
+            await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);
+
+            // Phase 2: Copy from destination to source (reverse)
+            foreach (var destFile in plan.FilesToCopyReverse)
+            {
+                try
+                {
+                    var relativePath = Path.GetRelativePath(destinationPath, destFile);
+                    var sourceFile = Path.Combine(sourcePath, relativePath);
+
+                    // Create directory if needed
+                    var sourceDir = Path.GetDirectoryName(sourceFile);
+                    if (!string.IsNullOrEmpty(sourceDir) && !Directory.Exists(sourceDir))
+                    {
+                        Directory.CreateDirectory(sourceDir);
+                    }
+
+                    // Copy file
+                    await CopyFileAsync(operation, destFile, sourceFile, progress, cts.Token);
+
+                    await _loggingService.LogAsync(operation.Id, LogLevel.Info, $"Copied (reverse): {relativePath}");
+                }
+                catch (Exception ex)
+                {
+                    await _loggingService.LogAsync(operation.Id, LogLevel.Error,
+                        $"Failed to copy {destFile}: {ex.Message}");
+                }
+            }
+
+            operation.Status = CopyStatus.Completed;
+            operation.EndTime = DateTime.UtcNow;
+
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Bidirectional sync completed: {operation.FilesTransferred} files synced in both directions");
+        }
+        catch (OperationCanceledException)
+        {
+            operation.Status = CopyStatus.Cancelled;
+            await _loggingService.LogAsync(operation.Id, LogLevel.Warning, "Bidirectional sync cancelled");
+        }
+        catch (Exception ex)
+        {
+            operation.Status = CopyStatus.Failed;
+            operation.ErrorMessage = ex.Message;
+            await _loggingService.LogAsync(operation.Id, LogLevel.Error, $"Bidirectional sync failed: {ex.Message}");
+        }
+        finally
+        {
+            _operations.TryRemove(operation.Id, out _);
+        }
+
+        return operation;
+    }
+
+    // Helper methods for new operations
+
+    private async Task DeleteSourceFilesAsync(
+        CopyOperation operation,
+        string sourceDir,
+        IProgress<FileTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var completedRelativePaths = operation.CompletedFiles
+            .Select(f => f.RelativePath)
+            .OrderByDescending(p => p.Count(c => c == Path.DirectorySeparatorChar))
+            .ToList();
+
+        foreach (var relativePath in completedRelativePaths)
+        {
+            var sourceFile = Path.Combine(sourceDir, relativePath);
+            try
+            {
+                if (File.Exists(sourceFile))
+                {
+                    File.Delete(sourceFile);
+                    await _loggingService.LogAsync(operation.Id, LogLevel.Info, $"Deleted source: {relativePath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't fail the operation
+                await _loggingService.LogAsync(operation.Id, LogLevel.Warning,
+                    $"Failed to delete source file {relativePath}: {ex.Message}");
+            }
+        }
+
+        // Clean up empty directories
+        await DeleteEmptyDirectoriesAsync(sourceDir, operation);
+    }
+
+    private async Task DeleteEmptyDirectoriesAsync(string rootDir, CopyOperation operation)
+    {
+        try
+        {
+            var directories = Directory.GetDirectories(rootDir, "*", SearchOption.AllDirectories)
+                .OrderByDescending(d => d.Length); // Delete deepest first
+
+            foreach (var dir in directories)
+            {
+                try
+                {
+                    if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                    {
+                        Directory.Delete(dir);
+                        await _loggingService.LogAsync(operation.Id, LogLevel.Info, $"Deleted empty directory: {dir}");
+                    }
+                }
+                catch
+                {
+                    // Ignore failures to delete directories
+                }
+            }
+        }
+        catch
+        {
+            // Ignore failures
+        }
+    }
+
+    private async Task CopyFilesFromListAsync(
+        CopyOperation operation,
+        string sourceDir,
+        string destDir,
+        List<string> filesToCopy,
+        IProgress<FileTransferProgress>? progress,
+        CancellationToken cancellationToken,
+        TransferStrategy? strategy = null)
+    {
+        foreach (var sourceFile in filesToCopy)
+        {
+            var relativePath = Path.GetRelativePath(sourceDir, sourceFile);
+            var destFile = Path.Combine(destDir, relativePath);
+
+            // Create directory if needed
+            var destFileDir = Path.GetDirectoryName(destFile);
+            if (!string.IsNullOrEmpty(destFileDir) && !Directory.Exists(destFileDir))
+            {
+                Directory.CreateDirectory(destFileDir);
+            }
+
+            // Copy file
+            await CopyFileAsync(operation, sourceFile, destFile, progress, cancellationToken);
+        }
     }
 }

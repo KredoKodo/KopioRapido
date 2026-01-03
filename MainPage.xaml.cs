@@ -188,4 +188,13 @@ public partial class MainPage : ContentPage
         }
 #endif
     }
+
+    private void OnOperationChanged(object? sender, EventArgs e)
+    {
+        if (sender is Picker picker && picker.SelectedIndex >= 0)
+        {
+            var operationType = picker.Items[picker.SelectedIndex];
+            ViewModel.SelectOperationCommand.Execute(operationType);
+        }
+    }
 }

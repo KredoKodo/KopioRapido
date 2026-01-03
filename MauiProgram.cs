@@ -28,9 +28,10 @@ public static class MauiProgram
 		builder.Services.AddSingleton<IResumeService, ResumeService>();
 		builder.Services.AddSingleton<IPerformanceMonitorService, PerformanceMonitorService>();
 		builder.Services.AddSingleton<IQuickScanService, QuickScanService>();
+		builder.Services.AddSingleton<FileComparisonHelper>();
 		builder.Services.AddSingleton<FileCopyEngine>();
 		builder.Services.AddSingleton<IFileOperationService, FileOperationService>();
-		
+
 		// Register Intelligence Engine services
 		builder.Services.AddSingleton<StorageProfiler>();
 		builder.Services.AddSingleton<FileAnalyzer>();

@@ -46,11 +46,46 @@ public partial class MainViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]
     private bool _isCopying;
 
-    // Dynamic button text based on state
-    public string CopyButtonText => IsCopying ? "Cancel" : "Start Copy";
-    
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CopyButtonText))]
+    private CopyOperationType _selectedOperation = CopyOperationType.Copy;
+
+    [ObservableProperty]
+    private string _operationWarningMessage = string.Empty;
+
+    [ObservableProperty]
+    private string _operationDescription = "Choose an operation type from the dropdown box above.";
+
+    [ObservableProperty]
+    private bool _showOperationWarning = false;
+
+    [ObservableProperty]
+    private string _operationInfoMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool _showOperationInfo = false;
+
+    // Dynamic button text based on operation type and state
+    public string CopyButtonText
+    {
+        get
+        {
+            if (IsCopying) return "Cancel";
+
+            return SelectedOperation switch
+            {
+                CopyOperationType.Copy => "Start Copy",
+                CopyOperationType.Move => "Start Move",
+                CopyOperationType.Sync => "Start Sync",
+                CopyOperationType.Mirror => "Start Mirror",
+                CopyOperationType.BiDirectionalSync => "Start Bi-Sync",
+                _ => "Start"
+            };
+        }
+    }
+
     // Dynamic button color based on state
-    public string CopyButtonColor => IsCopying 
+    public string CopyButtonColor => IsCopying
         ? "#EF4444" // Red when copying (cancel mode)
         : "#10B981"; // Green when ready (start mode)
 
@@ -294,6 +329,64 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private void SelectOperation(string operationType)
+    {
+        if (Enum.TryParse<CopyOperationType>(operationType, out var operation))
+        {
+            SelectedOperation = operation;
+
+            // Set description, warnings, and info messages based on operation type
+            (OperationDescription, OperationWarningMessage, ShowOperationWarning, OperationInfoMessage, ShowOperationInfo) = operation switch
+            {
+                CopyOperationType.Copy => (
+                    "Copy all files from the source to destination. No files will be deleted during this operation.",
+                    string.Empty,
+                    false,
+                    string.Empty,
+                    false
+                ),
+                CopyOperationType.Move => (
+                    "Copies all files from source to destination, then deletes the source files after successful transfer. This frees up space on the source drive.",
+                    "WARNING: Source files will be permanently deleted after the transfer completes. Ensure you have backups if needed.",
+                    true,
+                    string.Empty,
+                    false
+                ),
+                CopyOperationType.Sync => (
+                    "One-way synchronization from source to destination. Only copies files that are missing or newer in the source. Identical files are skipped. Files that only exist in the destination are preserved.",
+                    string.Empty,
+                    false,
+                    string.Empty,
+                    false
+                ),
+                CopyOperationType.Mirror => (
+                    "Makes the destination an exact mirror of the source. Copies missing and newer files, then deletes any files in the destination that don't exist in the source.",
+                    "WARNING: Files in the destination that don't exist in the source will be permanently deleted. This operation cannot be undone.",
+                    true,
+                    string.Empty,
+                    false
+                ),
+                CopyOperationType.BiDirectionalSync => (
+                    "Two-way synchronization between source and destination. Files are copied in both directions based on which version is newer. If a file exists in only one location, it's copied to the other. Conflicts are resolved by timestamp (newer wins).",
+                    string.Empty,
+                    false,
+                    string.Empty,
+                    false
+                ),
+                _ => (
+                    "Choose an operation type from the dropdown box above.",
+                    string.Empty,
+                    false,
+                    string.Empty,
+                    false
+                )
+            };
+
+            AddLogMessage($"Operation type changed to: {operation}");
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanStartCopy))]
     private async Task StartCopyAsync()
     {
@@ -315,7 +408,7 @@ public partial class MainViewModel : ObservableObject
         IsCopying = true;
         _operationStartTime = DateTime.Now;
         _currentOperationId = null; // Reset so new operation ID is picked up from progress
-        StatusMessage = "Starting copy...";
+        StatusMessage = $"Starting {SelectedOperation.ToString().ToLower()}...";
         _currentOperationCts = new CancellationTokenSource();
         LogMessages.Clear();
 
@@ -337,7 +430,7 @@ public partial class MainViewModel : ObservableObject
         SourceFiles.Clear();
         DestinationFiles.Clear();
 
-        AddLogMessage($"Starting copy from {SourcePath} to {DestinationPath}");
+        AddLogMessage($"Starting {SelectedOperation} from {SourcePath} to {DestinationPath}");
         AddLogMessage($"Total files: {_allSourceFiles.Count}");
 
         var progress = new Progress<FileTransferProgress>(UpdateProgress);
@@ -397,7 +490,7 @@ public partial class MainViewModel : ObservableObject
             // Calculate total size from already-scanned files to avoid rescanning
             long totalBytes = _allSourceFiles.Sum(f => f.SizeBytes);
             
-            StatusMessage = "Copying...";
+            StatusMessage = $"{SelectedOperation}...";
 
             // Store totals in strategy so FileCopyEngine can skip analysis
             strategy.PreCalculatedTotalFiles = _allSourceFiles.Count;
@@ -406,11 +499,12 @@ public partial class MainViewModel : ObservableObject
             // Yield to allow UI to update before starting heavy work
             await Task.Yield();
 
-            // Run copy on background thread to keep UI responsive
+            // Run operation on background thread to keep UI responsive
             var operation = await Task.Run(async () =>
-                await _fileOperationService.StartCopyAsync(
+                await _fileOperationService.StartOperationAsync(
                     SourcePath,
                     DestinationPath,
+                    SelectedOperation,
                     progress,
                     _currentOperationCts.Token,
                     strategy).ConfigureAwait(false)).ConfigureAwait(false);
@@ -425,8 +519,8 @@ public partial class MainViewModel : ObservableObject
             {
                 if (operation.Status == CopyStatus.Completed)
                 {
-                    StatusMessage = "Copy completed successfully";
-                    AddLogMessage($"Copy completed: {operation.FilesTransferred} files, {FormatBytes(operation.BytesTransferred)} transferred");
+                    StatusMessage = $"{SelectedOperation} completed successfully";
+                    AddLogMessage($"{SelectedOperation} completed: {operation.FilesTransferred} files, {FormatBytes(operation.BytesTransferred)} transferred");
                     OverallProgress = 100;
 
                     // Show completion summary
