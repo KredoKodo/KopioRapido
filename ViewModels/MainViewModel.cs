@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using KopioRapido.Models;
 using KopioRapido.Services;
+using KopioRapido.Graphics;
 
 namespace KopioRapido.ViewModels;
 
@@ -15,15 +16,18 @@ public partial class MainViewModel : ObservableObject
     private string? _currentOperationId;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartOperationCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyCommand))]
     private string _sourcePath = string.Empty;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartOperationCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyCommand))]
     private string _destinationPath = string.Empty;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(StartCopyCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartOperationCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCopyCommand))]
     private bool _isCopying;
 
@@ -60,11 +64,77 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasFilesToCopy;
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartOperationCommand))]
+    [NotifyCanExecuteChangedFor(nameof(VerifyCommand))]
+    private CopyOperationType _selectedOperationType = CopyOperationType.Copy;
+
+    [ObservableProperty]
+    private VerificationResult? _verificationResult;
+
+    [ObservableProperty]
+    private bool _showVerificationResults;
+
+    public ProgressCircleDrawable ProgressDrawable { get; } = new ProgressCircleDrawable();
+    public GradientBackgroundDrawable BackgroundDrawable { get; } = new GradientBackgroundDrawable();
+    public GlowingRingDrawable SourceRingDrawable { get; } = new GlowingRingDrawable { IconType = "folder" };
+    public GlowingRingDrawable DestinationRingDrawable { get; } = new GlowingRingDrawable { IconType = "cloud" };
+
+    private GraphicsView? _progressGraphicsView;
+    private GraphicsView? _sourceRingGraphicsView;
+    private GraphicsView? _destinationRingGraphicsView;
+
     public MainViewModel(IFileOperationService fileOperationService, IProgressTrackerService progressTracker, IFolderPickerService folderPicker)
     {
-        _fileOperationService = fileOperationService;
-        _progressTracker = progressTracker;
-        _folderPicker = folderPicker;
+        DiagnosticLogger.Log("=== MainViewModel constructor START ===");
+        try
+        {
+            DiagnosticLogger.Log("Injecting services...");
+            _fileOperationService = fileOperationService;
+            _progressTracker = progressTracker;
+            _folderPicker = folderPicker;
+            DiagnosticLogger.Log("=== MainViewModel constructor SUCCESS ===");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.LogException("MainViewModel constructor", ex);
+            throw;
+        }
+    }
+
+    public void SetProgressGraphicsView(GraphicsView graphicsView)
+    {
+        DiagnosticLogger.Log("=== SetProgressGraphicsView START ===");
+        try
+        {
+            _progressGraphicsView = graphicsView;
+            DiagnosticLogger.Log($"GraphicsView set: {graphicsView != null}");
+            DiagnosticLogger.Log("=== SetProgressGraphicsView SUCCESS ===");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.LogException("SetProgressGraphicsView", ex);
+            throw;
+        }
+    }
+
+    public void SetSourceRingGraphicsView(GraphicsView graphicsView)
+    {
+        _sourceRingGraphicsView = graphicsView;
+    }
+
+    public void SetDestinationRingGraphicsView(GraphicsView graphicsView)
+    {
+        _destinationRingGraphicsView = graphicsView;
+    }
+
+    private void UpdateRingStates()
+    {
+        SourceRingDrawable.IsActive = IsCopying;
+        DestinationRingDrawable.IsActive = IsCopying;
+
+        _sourceRingGraphicsView?.Invalidate();
+        _destinationRingGraphicsView?.Invalidate();
     }
 
     [RelayCommand]
@@ -159,8 +229,8 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanStartCopy))]
-    private async Task StartCopyAsync()
+    [RelayCommand(CanExecute = nameof(CanStartOperation))]
+    private async Task StartOperationAsync()
     {
         if (string.IsNullOrWhiteSpace(SourcePath) || string.IsNullOrWhiteSpace(DestinationPath))
         {
@@ -169,39 +239,61 @@ public partial class MainViewModel : ObservableObject
         }
 
         IsCopying = true;
-        StatusMessage = "Copying...";
+        UpdateRingStates();
+        ShowVerificationResults = false;
+        StatusMessage = $"{SelectedOperationType}...";
         _currentOperationCts = new CancellationTokenSource();
         LogMessages.Clear();
 
-        AddLogMessage($"Starting copy from {SourcePath} to {DestinationPath}");
+        AddLogMessage($"Starting {SelectedOperationType} from {SourcePath} to {DestinationPath}");
 
         var progress = new Progress<FileTransferProgress>(UpdateProgress);
 
         try
         {
-            var operation = await _fileOperationService.StartCopyAsync(
-                SourcePath,
-                DestinationPath,
-                progress,
-                _currentOperationCts.Token);
+            CopyOperation? operation = null;
 
-            _currentOperationId = operation.Id;
+            switch (SelectedOperationType)
+            {
+                case CopyOperationType.Copy:
+                    operation = await _fileOperationService.StartCopyAsync(
+                        SourcePath, DestinationPath, progress, _currentOperationCts.Token);
+                    break;
 
-            if (operation.Status == CopyStatus.Completed)
-            {
-                StatusMessage = "Copy completed successfully";
-                AddLogMessage($"Copy completed: {operation.FilesTransferred} files, {FormatBytes(operation.BytesTransferred)} transferred");
-                OverallProgress = 100;
+                case CopyOperationType.Move:
+                    operation = await _fileOperationService.StartMoveAsync(
+                        SourcePath, DestinationPath, progress, _currentOperationCts.Token);
+                    break;
+
+                case CopyOperationType.Mirror:
+                    operation = await _fileOperationService.StartMirrorAsync(
+                        SourcePath, DestinationPath, progress, _currentOperationCts.Token);
+                    break;
+
+                default:
+                    throw new NotSupportedException($"Operation type {SelectedOperationType} not supported");
             }
-            else if (operation.Status == CopyStatus.Failed)
+
+            if (operation != null)
             {
-                StatusMessage = $"Copy failed: {operation.ErrorMessage}";
-                AddLogMessage($"Copy failed: {operation.ErrorMessage}");
-            }
-            else if (operation.Status == CopyStatus.Cancelled)
-            {
-                StatusMessage = "Copy cancelled";
-                AddLogMessage("Copy cancelled by user");
+                _currentOperationId = operation.Id;
+
+                if (operation.Status == CopyStatus.Completed)
+                {
+                    StatusMessage = $"{SelectedOperationType} completed successfully";
+                    AddLogMessage($"{SelectedOperationType} completed: {operation.FilesTransferred} files, {FormatBytes(operation.BytesTransferred)} transferred");
+                    OverallProgress = 100;
+                }
+                else if (operation.Status == CopyStatus.Failed)
+                {
+                    StatusMessage = $"{SelectedOperationType} failed: {operation.ErrorMessage}";
+                    AddLogMessage($"{SelectedOperationType} failed: {operation.ErrorMessage}");
+                }
+                else if (operation.Status == CopyStatus.Cancelled)
+                {
+                    StatusMessage = $"{SelectedOperationType} cancelled";
+                    AddLogMessage($"{SelectedOperationType} cancelled by user");
+                }
             }
         }
         catch (Exception ex)
@@ -212,12 +304,67 @@ public partial class MainViewModel : ObservableObject
         finally
         {
             IsCopying = false;
+            UpdateRingStates();
             _currentOperationCts?.Dispose();
             _currentOperationCts = null;
         }
     }
 
-    private bool CanStartCopy() => !IsCopying && !string.IsNullOrWhiteSpace(SourcePath) && !string.IsNullOrWhiteSpace(DestinationPath);
+    private bool CanStartOperation() => !IsCopying && !string.IsNullOrWhiteSpace(SourcePath) && !string.IsNullOrWhiteSpace(DestinationPath);
+
+    [RelayCommand(CanExecute = nameof(CanStartOperation))]
+    private async Task VerifyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SourcePath) || string.IsNullOrWhiteSpace(DestinationPath))
+        {
+            StatusMessage = "Please select both source and destination";
+            return;
+        }
+
+        IsCopying = true;
+        UpdateRingStates();
+        StatusMessage = "Verifying...";
+        _currentOperationCts = new CancellationTokenSource();
+        LogMessages.Clear();
+
+        AddLogMessage($"Starting verification: {SourcePath} vs {DestinationPath}");
+
+        var progress = new Progress<FileTransferProgress>(UpdateProgress);
+
+        try
+        {
+            var result = await _fileOperationService.StartVerifyAsync(
+                SourcePath, DestinationPath, progress, _currentOperationCts.Token);
+
+            VerificationResult = result;
+            ShowVerificationResults = true;
+
+            if (result.IsIdentical)
+            {
+                StatusMessage = "Verification complete: Directories are identical";
+                AddLogMessage($"All {result.IdenticalFiles} files are identical");
+            }
+            else
+            {
+                StatusMessage = $"Verification complete: {result.DifferentFiles.Count + result.MissingFiles.Count + result.ExtraFiles.Count} differences found";
+                AddLogMessage($"Found {result.DifferentFiles.Count} different, " +
+                             $"{result.MissingFiles.Count} missing, " +
+                             $"{result.ExtraFiles.Count} extra files");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Verification error: {ex.Message}";
+            AddLogMessage($"Error: {ex.Message}");
+        }
+        finally
+        {
+            IsCopying = false;
+            UpdateRingStates();
+            _currentOperationCts?.Dispose();
+            _currentOperationCts = null;
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(CanCancelCopy))]
     private async Task CancelCopyAsync()
@@ -265,6 +412,12 @@ public partial class MainViewModel : ObservableObject
             {
                 var overallProg = _progressTracker.GetOverallProgress(_currentOperationId);
                 OverallProgress = overallProg;
+
+                // Update progress circle drawable
+                ProgressDrawable.Progress = overallProg;
+                ProgressDrawable.IsActive = IsCopying;
+                ProgressDrawable.StatusText = IsCopying ? "TRANSFERRING" : "READY";
+                _progressGraphicsView?.Invalidate();
 
                 var eta = _progressTracker.GetEstimatedTimeRemaining(_currentOperationId);
                 if (eta.HasValue)

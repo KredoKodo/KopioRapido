@@ -24,9 +24,40 @@ public class FileOperationService : IFileOperationService
         IProgress<FileTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var operation = await _copyEngine.CopyAsync(source, destination, progress, cancellationToken);
+        var operation = await _copyEngine.CopyAsync(source, destination, CopyOperationType.Copy, progress, cancellationToken);
         _activeOperations[operation.Id] = operation;
         return operation;
+    }
+
+    public async Task<CopyOperation> StartMoveAsync(
+        string source,
+        string destination,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var operation = await _copyEngine.CopyAsync(source, destination, CopyOperationType.Move, progress, cancellationToken);
+        _activeOperations[operation.Id] = operation;
+        return operation;
+    }
+
+    public async Task<CopyOperation> StartMirrorAsync(
+        string source,
+        string destination,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var operation = await _copyEngine.CopyAsync(source, destination, CopyOperationType.Mirror, progress, cancellationToken);
+        _activeOperations[operation.Id] = operation;
+        return operation;
+    }
+
+    public async Task<VerificationResult> StartVerifyAsync(
+        string source,
+        string destination,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await _copyEngine.VerifyAsync(source, destination, progress, cancellationToken);
     }
 
     public async Task<CopyOperation> ResumeCopyAsync(

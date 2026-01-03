@@ -15,6 +15,7 @@
             <converters:BoolInverterConverter x:Key="InverseBoolConverter"/>
             <converters:PercentToProgressConverter x:Key="PercentToProgressConverter"/>
             <converters:IsStringNotNullOrEmptyConverter x:Key="IsStringNotNullOrEmptyConverter"/>
+            <converters:EnumToBoolConverter x:Key="EnumToBoolConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

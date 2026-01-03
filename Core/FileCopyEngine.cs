@@ -46,6 +46,7 @@ public class FileCopyEngine
     public async Task<CopyOperation> CopyAsync(
         string sourcePath,
         string destinationPath,
+        CopyOperationType operationType,
         IProgress<FileTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -53,7 +54,7 @@ public class FileCopyEngine
         {
             SourcePath = sourcePath,
             DestinationPath = destinationPath,
-            OperationType = CopyOperationType.Copy,
+            OperationType = operationType,
             Status = CopyStatus.InProgress,
             StartTime = DateTime.UtcNow,
             CanResume = true
@@ -65,36 +66,53 @@ public class FileCopyEngine
         try
         {
             await _loggingService.LogAsync(operation.Id, LogLevel.Info,
-                $"Starting copy operation from '{sourcePath}' to '{destinationPath}'");
+                $"Starting {operationType} operation from '{sourcePath}' to '{destinationPath}'");
 
             await AnalyzeSourceAsync(operation, sourcePath);
             _progressTracker.SetTotalSize(operation.Id, operation.TotalBytes, operation.TotalFiles);
             await _resumeService.SaveOperationStateAsync(operation);
 
-            if (File.Exists(sourcePath))
+            // Route to appropriate operation handler based on type
+            switch (operationType)
             {
-                await CopyFileAsync(operation, sourcePath, destinationPath, progress, cts.Token);
-            }
-            else if (Directory.Exists(sourcePath))
-            {
-                await CopyDirectoryAsync(operation, sourcePath, destinationPath, progress, cts.Token);
-            }
-            else
-            {
-                throw new FileNotFoundException($"Source path not found: {sourcePath}");
+                case CopyOperationType.Copy:
+                    if (File.Exists(sourcePath))
+                    {
+                        await CopyFileAsync(operation, sourcePath, destinationPath, progress, cts.Token);
+                    }
+                    else if (Directory.Exists(sourcePath))
+                    {
+                        await CopyDirectoryAsync(operation, sourcePath, destinationPath, progress, cts.Token);
+                    }
+                    else
+                    {
+                        throw new FileNotFoundException($"Source path not found: {sourcePath}");
+                    }
+                    break;
+
+                case CopyOperationType.Move:
+                    await ExecuteMoveAsync(operation, sourcePath, destinationPath, progress, cts.Token);
+                    break;
+
+                case CopyOperationType.Mirror:
+                    await ExecuteMirrorAsync(operation, sourcePath, destinationPath, progress, cts.Token);
+                    break;
+
+                default:
+                    throw new NotSupportedException($"Operation type {operationType} is not supported");
             }
 
             operation.Status = CopyStatus.Completed;
             operation.EndTime = DateTime.UtcNow;
 
             await _loggingService.LogAsync(operation.Id, LogLevel.Info,
-                $"Copy operation completed successfully. {operation.FilesTransferred} files, {FormatBytes(operation.BytesTransferred)} transferred");
+                $"{operationType} operation completed successfully. {operation.FilesTransferred} files, {FormatBytes(operation.BytesTransferred)} transferred");
         }
         catch (OperationCanceledException)
         {
             operation.Status = CopyStatus.Cancelled;
             operation.EndTime = DateTime.UtcNow;
-            await _loggingService.LogAsync(operation.Id, LogLevel.Warning, "Copy operation was cancelled");
+            await _loggingService.LogAsync(operation.Id, LogLevel.Warning, $"{operationType} operation was cancelled");
         }
         catch (Exception ex)
         {
@@ -102,7 +120,7 @@ public class FileCopyEngine
             operation.EndTime = DateTime.UtcNow;
             operation.ErrorMessage = ex.Message;
             await _loggingService.LogAsync(operation.Id, LogLevel.Error,
-                $"Copy operation failed: {ex.Message}", exception: ex);
+                $"{operationType} operation failed: {ex.Message}", exception: ex);
         }
         finally
         {
@@ -530,6 +548,375 @@ public class FileCopyEngine
         return operation;
     }
 
+    public async Task<VerificationResult> VerifyAsync(
+        string sourcePath,
+        string destinationPath,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new VerificationResult
+        {
+            SourcePath = sourcePath,
+            DestinationPath = destinationPath,
+            StartTime = DateTime.UtcNow
+        };
+
+        try
+        {
+            await _loggingService.LogAsync(result.Id, LogLevel.Info,
+                $"Starting verification: '{sourcePath}' vs '{destinationPath}'");
+
+            if (File.Exists(sourcePath))
+            {
+                await VerifyFileAsync(result, sourcePath, destinationPath, progress, cancellationToken);
+            }
+            else if (Directory.Exists(sourcePath))
+            {
+                await VerifyDirectoryAsync(result, sourcePath, destinationPath, progress, cancellationToken);
+            }
+            else
+            {
+                throw new FileNotFoundException($"Source path not found: {sourcePath}");
+            }
+
+            result.EndTime = DateTime.UtcNow;
+
+            await _loggingService.LogAsync(result.Id, LogLevel.Info,
+                $"Verification complete: {result.IdenticalFiles} identical, " +
+                $"{result.DifferentFiles.Count} different, " +
+                $"{result.MissingFiles.Count} missing, " +
+                $"{result.ExtraFiles.Count} extra");
+        }
+        catch (Exception ex)
+        {
+            result.EndTime = DateTime.UtcNow;
+            await _loggingService.LogAsync(result.Id, LogLevel.Error,
+                $"Verification failed: {ex.Message}", exception: ex);
+            throw;
+        }
+
+        return result;
+    }
+
+    private async Task VerifyFileAsync(
+        VerificationResult result,
+        string sourceFile,
+        string destFile,
+        IProgress<FileTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var fileName = Path.GetFileName(sourceFile);
+        var sourceInfo = new FileInfo(sourceFile);
+
+        progress?.Report(new FileTransferProgress
+        {
+            FileName = fileName,
+            SourcePath = sourceFile,
+            DestinationPath = destFile,
+            FileSize = sourceInfo.Length,
+            BytesTransferred = 0
+        });
+
+        if (!File.Exists(destFile))
+        {
+            result.MissingFiles.Add(new FileComparisonInfo
+            {
+                RelativePath = fileName,
+                SourceSize = sourceInfo.Length,
+                SourceLastModified = sourceInfo.LastWriteTimeUtc,
+                Reason = "File does not exist in destination"
+            });
+            result.TotalBytesDifferent += sourceInfo.Length;
+        }
+        else if (!AreFilesIdentical(sourceFile, destFile))
+        {
+            var destInfo = new FileInfo(destFile);
+            result.DifferentFiles.Add(new FileComparisonInfo
+            {
+                RelativePath = fileName,
+                SourceSize = sourceInfo.Length,
+                SourceLastModified = sourceInfo.LastWriteTimeUtc,
+                DestinationSize = destInfo.Length,
+                DestinationLastModified = destInfo.LastWriteTimeUtc,
+                Reason = GetDifferenceReason(sourceInfo, destInfo)
+            });
+            result.TotalBytesDifferent += sourceInfo.Length;
+        }
+        else
+        {
+            result.IdenticalFiles++;
+        }
+
+        result.TotalFilesCompared++;
+
+        progress?.Report(new FileTransferProgress
+        {
+            FileName = fileName,
+            SourcePath = sourceFile,
+            DestinationPath = destFile,
+            FileSize = sourceInfo.Length,
+            BytesTransferred = sourceInfo.Length
+        });
+
+        await Task.CompletedTask;
+    }
+
+    private async Task VerifyDirectoryAsync(
+        VerificationResult result,
+        string sourceDir,
+        string destDir,
+        IProgress<FileTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var sourceFiles = Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories);
+
+        // Compare source files
+        foreach (var sourceFile in sourceFiles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var relativePath = Path.GetRelativePath(sourceDir, sourceFile);
+            var destFile = Path.Combine(destDir, relativePath);
+
+            var sourceInfo = new FileInfo(sourceFile);
+
+            progress?.Report(new FileTransferProgress
+            {
+                FileName = relativePath,
+                SourcePath = sourceFile,
+                DestinationPath = destFile,
+                FileSize = sourceInfo.Length
+            });
+
+            if (!File.Exists(destFile))
+            {
+                result.MissingFiles.Add(new FileComparisonInfo
+                {
+                    RelativePath = relativePath,
+                    SourceSize = sourceInfo.Length,
+                    SourceLastModified = sourceInfo.LastWriteTimeUtc,
+                    Reason = "File does not exist in destination"
+                });
+                result.TotalBytesDifferent += sourceInfo.Length;
+            }
+            else if (!AreFilesIdentical(sourceFile, destFile))
+            {
+                var destInfo = new FileInfo(destFile);
+                result.DifferentFiles.Add(new FileComparisonInfo
+                {
+                    RelativePath = relativePath,
+                    SourceSize = sourceInfo.Length,
+                    SourceLastModified = sourceInfo.LastWriteTimeUtc,
+                    DestinationSize = destInfo.Length,
+                    DestinationLastModified = destInfo.LastWriteTimeUtc,
+                    Reason = GetDifferenceReason(sourceInfo, destInfo)
+                });
+                result.TotalBytesDifferent += sourceInfo.Length;
+            }
+            else
+            {
+                result.IdenticalFiles++;
+            }
+
+            result.TotalFilesCompared++;
+        }
+
+        // Find extra files in destination
+        if (Directory.Exists(destDir))
+        {
+            var destFiles = Directory.GetFiles(destDir, "*", SearchOption.AllDirectories);
+            var sourceFileSet = sourceFiles
+                .Select(f => Path.GetRelativePath(sourceDir, f))
+                .ToHashSet();
+
+            foreach (var destFile in destFiles)
+            {
+                var relativePath = Path.GetRelativePath(destDir, destFile);
+
+                if (!sourceFileSet.Contains(relativePath))
+                {
+                    var destInfo = new FileInfo(destFile);
+                    result.ExtraFiles.Add(new FileComparisonInfo
+                    {
+                        RelativePath = relativePath,
+                        DestinationSize = destInfo.Length,
+                        DestinationLastModified = destInfo.LastWriteTimeUtc,
+                        Reason = "File exists in destination but not in source"
+                    });
+                }
+            }
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private string GetDifferenceReason(FileInfo sourceInfo, FileInfo destInfo)
+    {
+        if (sourceInfo.Length != destInfo.Length)
+        {
+            return $"Size mismatch (source: {FormatBytes(sourceInfo.Length)}, dest: {FormatBytes(destInfo.Length)})";
+        }
+
+        if (sourceInfo.LastWriteTimeUtc != destInfo.LastWriteTimeUtc)
+        {
+            return "Timestamp mismatch";
+        }
+
+        return "Unknown difference";
+    }
+
+    private async Task ExecuteMoveAsync(
+        CopyOperation operation,
+        string sourcePath,
+        string destinationPath,
+        IProgress<FileTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        // Step 1: Copy all files first
+        if (File.Exists(sourcePath))
+        {
+            await CopyFileAsync(operation, sourcePath, destinationPath, progress, cancellationToken);
+        }
+        else if (Directory.Exists(sourcePath))
+        {
+            await CopyDirectoryAsync(operation, sourcePath, destinationPath, progress, cancellationToken);
+        }
+        else
+        {
+            throw new FileNotFoundException($"Source path not found: {sourcePath}");
+        }
+
+        // Step 2: Only delete source if ALL copies succeeded
+        if (operation.Status == CopyStatus.InProgress)
+        {
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                "All files copied successfully, deleting source files...");
+
+            if (File.Exists(sourcePath))
+            {
+                await DeleteFileAsync(operation, sourcePath, cancellationToken);
+            }
+            else if (Directory.Exists(sourcePath))
+            {
+                await DeleteSourceDirectoryAsync(operation, sourcePath, cancellationToken);
+            }
+
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                "Move operation: source files deleted successfully");
+        }
+    }
+
+    private async Task ExecuteMirrorAsync(
+        CopyOperation operation,
+        string sourcePath,
+        string destinationPath,
+        IProgress<FileTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(sourcePath))
+        {
+            throw new InvalidOperationException("Mirror operation requires source to be a directory");
+        }
+
+        Directory.CreateDirectory(destinationPath);
+
+        // Step 1: Get all source files
+        var sourceFiles = Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(sourcePath, f))
+            .ToHashSet();
+
+        await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+            $"Mirror sync: found {sourceFiles.Count} files in source");
+
+        // Step 2: Copy new/changed files from source to destination
+        var files = Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories);
+        int skippedFiles = 0;
+
+        foreach (var sourceFile in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var relativePath = Path.GetRelativePath(sourcePath, sourceFile);
+            var destFile = Path.Combine(destinationPath, relativePath);
+
+            // Skip if already completed and identical
+            if (IsFileAlreadyCompleted(operation, sourceFile, destFile, sourcePath) &&
+                AreFilesIdentical(sourceFile, destFile))
+            {
+                skippedFiles++;
+                await _loggingService.LogAsync(operation.Id, LogLevel.Debug,
+                    $"Skipping identical file: {relativePath}");
+                continue;
+            }
+
+            // Copy if file doesn't exist or differs
+            if (!AreFilesIdentical(sourceFile, destFile))
+            {
+                await CopyFileAsync(operation, sourceFile, destFile, progress, cancellationToken);
+                MarkFileAsCompleted(operation, sourceFile, sourcePath);
+            }
+            else
+            {
+                skippedFiles++;
+            }
+
+            // Periodically save operation state
+            if (operation.FilesTransferred % 10 == 0)
+            {
+                await _resumeService.SaveOperationStateAsync(operation);
+            }
+        }
+
+        if (skippedFiles > 0)
+        {
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Skipped {skippedFiles} identical files");
+        }
+
+        // Step 3: Delete files in destination that don't exist in source
+        if (Directory.Exists(destinationPath))
+        {
+            var destFiles = Directory.GetFiles(destinationPath, "*", SearchOption.AllDirectories);
+            int deletedFiles = 0;
+
+            foreach (var destFile in destFiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var relativePath = Path.GetRelativePath(destinationPath, destFile);
+
+                if (!sourceFiles.Contains(relativePath))
+                {
+                    await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                        $"Deleting extra file from destination: {relativePath}");
+                    await DeleteFileAsync(operation, destFile, cancellationToken);
+                    deletedFiles++;
+                }
+            }
+
+            if (deletedFiles > 0)
+            {
+                await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                    $"Deleted {deletedFiles} extra files from destination");
+            }
+
+            // Step 4: Delete empty directories in destination
+            var destDirs = Directory.GetDirectories(destinationPath, "*", SearchOption.AllDirectories)
+                .OrderByDescending(d => d.Length); // Deepest first
+
+            foreach (var dir in destDirs)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Directory.GetFileSystemEntries(dir).Length == 0)
+                {
+                    Directory.Delete(dir);
+                    await _loggingService.LogAsync(operation.Id, LogLevel.Debug,
+                        $"Deleted empty directory: {Path.GetRelativePath(destinationPath, dir)}");
+                }
+            }
+        }
+    }
+
     private bool IsFileAlreadyCompleted(CopyOperation operation, string sourceFile, string destFile, string sourceDir)
     {
         var relativePath = Path.GetRelativePath(sourceDir, sourceFile);
@@ -588,6 +975,81 @@ public class FileCopyEngine
         // Remove if already exists (shouldn't happen, but be safe)
         operation.CompletedFiles.RemoveAll(f => f.RelativePath == relativePath);
         operation.CompletedFiles.Add(completedFile);
+    }
+
+    private bool AreFilesIdentical(string sourceFile, string destFile)
+    {
+        if (!File.Exists(destFile))
+        {
+            return false;
+        }
+
+        var sourceInfo = new FileInfo(sourceFile);
+        var destInfo = new FileInfo(destFile);
+
+        return sourceInfo.Length == destInfo.Length &&
+               sourceInfo.LastWriteTimeUtc == destInfo.LastWriteTimeUtc;
+    }
+
+    private async Task DeleteFileAsync(
+        CopyOperation operation,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+            $"Deleting file: {Path.GetFileName(filePath)}");
+
+        await RetryHelper.ExecuteWithRetryAsync(
+            async (attempt, ct) =>
+            {
+                File.Delete(filePath);
+                await Task.CompletedTask;
+            },
+            _retryConfig,
+            onRetry: async (attemptNumber, exception, delay) =>
+            {
+                await _loggingService.LogAsync(operation.Id, LogLevel.Warning,
+                    $"Retry attempt {attemptNumber}/{_retryConfig.MaxRetryAttempts} for deleting '{Path.GetFileName(filePath)}' after error: {exception.Message}. Waiting {delay.TotalSeconds:F1}s before retry.");
+            },
+            cancellationToken);
+    }
+
+    private async Task DeleteSourceDirectoryAsync(
+        CopyOperation operation,
+        string sourceDir,
+        CancellationToken cancellationToken)
+    {
+        var files = Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories);
+
+        // Delete files first
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await DeleteFileAsync(operation, file, cancellationToken);
+        }
+
+        // Then delete empty directories (bottom-up)
+        var directories = Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories)
+            .OrderByDescending(d => d.Length); // Deepest first
+
+        foreach (var dir in directories)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Directory.GetFileSystemEntries(dir).Length == 0)
+            {
+                Directory.Delete(dir);
+                await _loggingService.LogAsync(operation.Id, LogLevel.Debug,
+                    $"Deleted empty directory: {Path.GetRelativePath(sourceDir, dir)}");
+            }
+        }
+
+        // Finally delete the root source directory if empty
+        if (Directory.GetFileSystemEntries(sourceDir).Length == 0)
+        {
+            Directory.Delete(sourceDir);
+            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                $"Deleted source directory: {sourceDir}");
+        }
     }
 
     private static string FormatBytes(long bytes)

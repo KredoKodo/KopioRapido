@@ -39,6 +39,7 @@ KopioRapido/
 │   ├── FileTransferProgress.cs # Progress tracking for individual files
 │   ├── FileItem.cs           # Individual file display model with progress tracking
 │   ├── RetryConfiguration.cs # Retry policy configuration
+│   ├── VerificationResult.cs # Verification operation results with file comparisons
 │   └── OperationLog.cs       # Logging data model
 ├── ViewModels/               # MVVM ViewModels
 │   └── MainViewModel.cs      # Main window ViewModel
@@ -46,14 +47,26 @@ KopioRapido/
 ├── Converters/               # XAML value converters
 │   ├── BoolInverterConverter.cs
 │   ├── PercentToProgressConverter.cs
-│   └── IsStringNotNullOrEmptyConverter.cs
+│   ├── IsStringNotNullOrEmptyConverter.cs
+│   └── EnumToBoolConverter.cs     # Converts CopyOperationType enum to bool for RadioButton binding
+├── Graphics/                 # Custom graphics and drawable components
+│   └── ProgressCircleDrawable.cs  # Animated progress circle using Microsoft.Maui.Graphics
 ├── Platforms/                # Platform-specific implementations
 │   ├── Windows/
 │   │   ├── FolderPickerService.cs       # Native Windows folder picker
-│   │   └── DragDropHelper.cs            # Native WinUI drag-drop handler (bypasses MAUI)
-│   └── MacCatalyst/FolderPickerService.cs   # Native macOS folder picker
+│   │   ├── DragDropHelper.cs            # Native WinUI drag-drop handler (bypasses MAUI)
+│   │   └── WindowEffects.cs             # Mica/Acrylic backdrop effects (DISABLED)
+│   └── MacCatalyst/
+│       ├── FolderPickerService.cs       # Native macOS folder picker (placeholder)
+│       └── WindowEffects.cs             # UIBlurEffect frosted glass (DISABLED)
+├── Resources/Images/         # SVG and image assets
+│   ├── app_background.svg          # Purple-cyan gradient background
+│   ├── ring_glow_idle.svg          # Cyan glowing ring (idle state)
+│   ├── ring_glow_active.svg        # Orange glowing ring (active state)
+│   ├── folder_icon.svg             # Purple folder icon
+│   └── drive_icon.svg              # Green cloud/drive icon
 ├── CLI/                      # Command-line interface (future implementation)
-├── MainPage.xaml[.cs]        # Main dual-pane UI (in root directory)
+├── MainPage.xaml[.cs]        # Modern UI with glowing circles and GraphicsView (CRASHES)
 └── MauiProgram.cs            # DI registration and app configuration
 ```
 
@@ -63,6 +76,7 @@ KopioRapido/
 
 The `FileCopyEngine` class is the heart of KopioRapido:
 
+- **Multiple Operation Types**: Copy, Move, Mirror Sync, and Verification operations
 - **Delta Sync Auto-detection**: Automatically uses FastRsyncNet delta sync for files >10MB when destination exists
 - **Progress Tracking**: Real-time progress updates for both individual files and overall operation
 - **Resume Support**: All operations save state for automatic resumption after interruption
@@ -71,10 +85,15 @@ The `FileCopyEngine` class is the heart of KopioRapido:
 - **Retry Logic**: Automatically retries transient errors (network issues, file locks, timeouts)
 
 Key methods:
-- `CopyAsync()` - Main entry point for copy operations, wraps operations in retry logic
+- `CopyAsync(operationType)` - Main entry point, routes to operation-specific handlers
+- `ExecuteMoveAsync()` - Copy all files, then delete source only after complete success
+- `ExecuteMirrorAsync()` - One-way sync with deletion of extra destination files
+- `VerifyAsync()` - Compare directories without copying, returns detailed differences
 - `CopyFileWithDeltaSyncAsync()` - Uses FastRsyncNet for efficient updates
 - `CopyFileDirectAsync()` - Standard copy with streaming and progress
 - `CopyDirectoryAsync()` - Recursive directory copying
+- `AreFilesIdentical()` - Compares files by size and timestamp
+- `DeleteFileAsync()` - Delete with retry logic
 
 ### Retry System (Core/RetryHelper.cs)
 
@@ -95,7 +114,12 @@ Configuration (RetryConfiguration):
 
 ### Service Layer
 
-**IFileOperationService**: High-level API for file operations (copy, move, sync, resume)
+**IFileOperationService**: High-level API for file operations
+- `StartCopyAsync()` - Copy files/directories from source to destination
+- `StartMoveAsync()` - Copy all files, then delete source after complete success
+- `StartMirrorAsync()` - One-way sync (make destination exactly match source)
+- `StartVerifyAsync()` - Compare directories and report differences
+- `ResumeCopyAsync()` - Resume interrupted operations
 
 **ILoggingService**: Detailed operation logging to both memory and disk
 - Logs stored in: `%LocalApplicationData%/KopioRapido/Logs/`
@@ -119,6 +143,9 @@ See [PLATFORM_FOLDER_PICKERS.md](PLATFORM_FOLDER_PICKERS.md) for implementation 
 ### MAUI GUI
 
 The GUI provides a dual-pane interface with:
+- **Operation Type Selector**: Radio buttons for Copy, Move, Mirror Sync
+  - Separate "Verify Only" button for verification mode
+  - Two-way binding to ViewModel using EnumToBoolConverter
 - **Left Pane (Source)**: Blue-bordered pane showing files to be copied
   - Drag-and-drop support for folders (Windows native implementation)
   - Browse button with native folder picker
@@ -134,6 +161,11 @@ The GUI provides a dual-pane interface with:
   - Overall operation progress bar
   - Real-time percentage updates
 - **Real-time Stats**: Current speed, average speed, ETA
+- **Verification Results Panel**: Color-coded statistics panel (appears after verification)
+  - Green: Identical files count
+  - Orange: Different files count
+  - Red: Missing files count (in source but not destination)
+  - Purple: Extra files count (in destination but not source)
 - **Activity Log**: Scrolling debug log at bottom of window
 - **File Transfer Visualization**: Files move from left pane to right pane as they copy
 
@@ -306,6 +338,87 @@ All services are registered in `MauiProgram.cs`:
    - Automatic state persistence every 10 files
    - Resume from exact point of interruption
 
+8. **Multiple Operation Types**: ✅ COMPLETED
+   - **Copy**: Standard file copying with delta sync for large files
+   - **Move**: Copy all files, then delete source only after complete success
+   - **Mirror Sync**: One-way sync that makes destination exactly match source (with deletions)
+   - **Verification**: Compare directories without copying, report all differences
+   - UI operation selector with radio buttons
+   - Color-coded verification results panel
+
+## ⚠️ Modern UI Implementation - IN PROGRESS (December 2025)
+
+### Current Status: Application Crashes on Startup
+
+**CRITICAL ISSUE**: The application builds successfully but crashes immediately on launch after implementing the new modern UI design based on the mockup.
+
+**What Was Implemented** (All code complete, not yet working):
+
+1. **SVG Visual Assets** (Resources/Images/):
+   - `app_background.svg` - Purple to cyan gradient background
+   - `ring_glow_idle.svg` - Cyan glowing ring for idle state
+   - `ring_glow_active.svg` - Orange glowing ring for active transfers
+   - `folder_icon.svg` - Purple gradient folder icon
+   - `drive_icon.svg` - Green gradient cloud/drive icon
+
+2. **Animated Progress Circle** (Graphics/ProgressCircleDrawable.cs):
+   - Custom IDrawable implementation using Microsoft.Maui.Graphics
+   - Dynamic progress arc animation (0-100%)
+   - State-based colors: cyan (idle) → orange (active)
+   - Outer glow effect during transfers
+   - Real-time percentage and status text
+
+3. **Modern Layered UI** (MainPage.xaml):
+   - Gradient background overlay (30% opacity for frosted glass effect)
+   - Three-column layout: Source Circle → Progress Circle → Destination Circle
+   - Glowing circular drop zones with folder/cloud icons
+   - Connection lines (orange) appearing during active transfers
+   - Operation type selector with Copy/Move/Mirror radio buttons
+   - File transfer list: queued files (left) → completed files (right)
+   - Circular control buttons: Play/Pause/Stop/Verify
+
+4. **Platform-Specific Frosted Glass Effects** (Code exists but DISABLED):
+   - `Platforms/Windows/WindowEffects.cs`:
+     - Mica material (Windows 11) with fallback to Acrylic (Windows 10)
+     - Native `MicaController` and `DesktopAcrylicController` APIs
+   - `Platforms/MacCatalyst/WindowEffects.cs`:
+     - UIBlurEffect with SystemUltraThinMaterialDark style
+     - Translucent window background
+   - Currently commented out in `App.xaml.cs` to diagnose crash
+
+**What's Not Working**:
+- ❌ Application crashes silently on startup (no window, no error dialog)
+- ❌ Crash occurs even with frosted glass effects disabled
+- ❌ Process starts then immediately terminates (exit code 127)
+- ❌ No .NET Runtime errors in Windows Event Log specific to KopioRapido
+
+**Likely Causes to Investigate**:
+1. **GraphicsView Initialization**: ProgressCircleDrawable may have drawing API issues
+2. **XAML Binding Errors**: New components may have invalid bindings
+3. **SVG Resource Loading**: SVG files may not be loading correctly
+4. **Microsoft.Maui.Graphics Dependencies**: Missing or incompatible drawing APIs
+5. **RadioButton/Converter Issues**: EnumToBoolConverter may have binding problems
+
+**Debugging Steps for Next Session**:
+1. Revert MainPage.xaml to previous working version to isolate crash
+2. Add try-catch blocks with logging in App.xaml.cs and MainPage.xaml.cs constructors
+3. Test ProgressCircleDrawable separately in minimal MAUI project
+4. Remove GraphicsView from XAML and test if app launches
+5. Check SVG resource registration in .csproj file
+6. Add Debug.WriteLine statements throughout initialization chain
+7. Run app with Visual Studio debugger attached to catch first-chance exceptions
+
+**Critical Files**:
+- `Graphics/ProgressCircleDrawable.cs` - Custom drawable (NEW)
+- `MainPage.xaml` - Completely redesigned UI layout
+- `MainPage.xaml.cs` - GraphicsView wiring via `SetProgressGraphicsView()`
+- `ViewModels/MainViewModel.cs` - ProgressDrawable property and Invalidate() calls
+- `App.xaml.cs` - Window effects code (currently commented out)
+- `Resources/Images/*.svg` - All SVG assets (5 files)
+- `Converters/EnumToBoolConverter.cs` - RadioButton binding (NEW)
+
+**Recommendation**: Start next session by reverting to the last working UI commit, then re-implement the modern UI incrementally (one component at a time) to identify the exact failure point.
+
 ## Known Limitations & TODOs
 
 ### Current Limitations
@@ -329,11 +442,6 @@ All services are registered in `MauiProgram.cs`:
 3. **Drag-and-Drop for macOS**:
    - Implement native macOS drag-drop handler similar to Windows
    - Use NSPasteboard and file promises
-
-4. **Additional Operations**:
-   - Move operations (copy + delete source)
-   - Sync operations (bidirectional comparison and sync)
-   - Verification mode (compare without copying)
 
 ## Common Development Tasks
 
