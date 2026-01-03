@@ -58,12 +58,20 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-		<PackageReference Include="FastRsyncNet" Version="2.4.4" />
+		<!-- Core project reference - contains all shared logic -->
+		<ProjectReference Include="KopioRapido.Core\KopioRapido.Core.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Exclude KopioRapido.Core directory from being compiled in GUI project -->
+		<Compile Remove="KopioRapido.Core\**\*" />
+		<None Include="KopioRapido.Core\**\*" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- MAUI-specific packages -->
 		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
-		<PackageReference Include="System.CommandLine" Version="2.0.1" />
-		<PackageReference Include="System.Management" Version="10.0.0" Condition="$(TargetFramework.Contains('windows'))" />
 	</ItemGroup>
 
 </Project>

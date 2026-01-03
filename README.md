@@ -119,23 +119,24 @@ KopioRapido/
 
 ### Planned Features
 
-- [ ] **Drag-and-Drop Support** - Drag files/folders into source/destination panes
 - [ ] **Command-Line Interface** - Full CLI with RoboCopy-compatible commands
 - [ ] **Shell Integration** - Right-click context menu ("Copy with KopioRapido")
-- [ ] **Automatic Retry** - Exponential backoff for network errors
-- [ ] **Sync Operations** - Bidirectional synchronization
-- [ ] **Move Operations** - Delete source after successful copy
 
 ### Completed Features
 
-- [x] Core file copying engine
-- [x] FastRsyncNet delta synchronization
-- [x] Progress tracking with speed calculation
-- [x] Resumable operations
-- [x] Detailed logging
-- [x] Dual-pane GUI
-- [x] Cross-platform support
-- [x] Native folder pickers (Windows/macOS fully functional)
+- [x] **Drag-and-Drop Support** - Drag folders from Finder/Explorer into source/destination panes
+- [x] **Multiple Operation Types** - Copy, Move, Sync, Mirror, BiDirectionalSync
+- [x] **Intelligence Engine** - Automatic storage profiling and strategy selection
+- [x] **Adaptive Performance** - Real-time concurrency adjustment
+- [x] **Selective Compression** - Brotli compression for compressible files on network transfers
+- [x] **Core file copying engine** - Optimized with FastRsyncNet delta synchronization
+- [x] **Progress tracking** - Real-time speed, ETA, compression statistics
+- [x] **Resumable operations** - Automatic state persistence and recovery
+- [x] **Detailed logging** - Per-operation logs with rich emoji indicators
+- [x] **Dual-pane GUI** - Modern interface with golden ratio sizing
+- [x] **Cross-platform support** - Windows and macOS/MacCatalyst
+- [x] **Native folder pickers** - Platform-specific folder selection dialogs
+- [x] **Exponential backoff retry** - Automatic retry with transient error detection
 
 ## Documentation
 

@@ -240,6 +240,15 @@ See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADA
 4. **Wrong compression ratio in summary**: Fixed inverted formula (now correctly shows uncompressed/compressed)
 5. **Network share detection on macOS**: Added heuristic fallback for /Volumes/ paths with slow write speeds
 
+### ✅ Drag-and-Drop Support (2026-01-03)
+- **MAUI DropGestureRecognizer**: Official Microsoft-documented approach using LoadInPlaceFileRepresentationAsync()
+- **Source Pane**: Accepts folder drops from Finder/Explorer
+- **Destination Pane**: Accepts folder drops from Finder/Explorer
+- **Platform Support**: Both Windows and macOS/MacCatalyst fully functional
+- **File Handling**: Automatically extracts parent directory if file is dropped
+- **Comprehensive Logging**: Detailed emoji-based logging for debugging drop operations
+- **Manual Fallback**: Folder selection buttons remain fully functional
+
 ## Current Limitations
 
 - CLI interface: Planned but not yet implemented
