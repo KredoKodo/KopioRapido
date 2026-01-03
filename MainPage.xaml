@@ -238,29 +238,6 @@
                                    LineBreakMode="WordWrap"
                                    TextColor="{AppThemeBinding Light=#495057, Dark=#AEAEB2}"/>
 
-                            <!-- Info Box (for informational messages) -->
-                            <Border IsVisible="{Binding ShowOperationInfo}"
-                                    BackgroundColor="{AppThemeBinding Light=#FFFBEB, Dark=#78350F}"
-                                    Stroke="{AppThemeBinding Light=#FCD34D, Dark=#FCD34D}"
-                                    StrokeThickness="2"
-                                    Padding="12">
-                                <Border.StrokeShape>
-                                    <RoundRectangle CornerRadius="6"/>
-                                </Border.StrokeShape>
-                                <HorizontalStackLayout Spacing="8">
-                                    <Label Text="ℹ️"
-                                           FontSize="16"
-                                           VerticalOptions="Start"
-                                           Margin="0,2,0,0"/>
-                                    <Label Text="{Binding OperationInfoMessage}"
-                                           FontSize="11"
-                                           LineBreakMode="WordWrap"
-                                           TextColor="{AppThemeBinding Light=#92400E, Dark=#FDE68A}"
-                                           VerticalOptions="Center"
-                                           HorizontalOptions="Fill"/>
-                                </HorizontalStackLayout>
-                            </Border>
-
                             <!-- Warning Box (for destructive operations) -->
                             <Border IsVisible="{Binding ShowOperationWarning}"
                                     BackgroundColor="{AppThemeBinding Light=#FEE, Dark=#4A1515}"
