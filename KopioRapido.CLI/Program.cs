@@ -1,4 +1,5 @@
 using System.CommandLine;
+using KopioRapido.CLI.Commands;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace KopioRapido.CLI;
@@ -17,18 +18,13 @@ class Program
         // Configure services (DI)
         var services = ServiceConfiguration.ConfigureServices();
 
-        // For now, create a simple CLI that just shows help
-        // TODO: Complete command implementation
-        Console.WriteLine("KopioRapido CLI");
-        Console.WriteLine("===============");
-        Console.WriteLine();
-        Console.WriteLine("USAGE:");
-        Console.WriteLine("  kopiorapido copy <source> <destination>");
-        Console.WriteLine("  kopiorapido --version");
-        Console.WriteLine();
-        Console.WriteLine("Commands will be fully implemented in next phase.");
-        Console.WriteLine("Core library and service infrastructure is complete.");
-        
-        return 0;
+        // Create root command
+        var rootCommand = new RootCommand("KopioRapido - High-performance file copy tool");
+
+        // Add copy command
+        rootCommand.Subcommands.Add(CopyCommand.Create(services));
+
+        // Parse and execute
+        return rootCommand.Parse(args).Invoke();
     }
 }
