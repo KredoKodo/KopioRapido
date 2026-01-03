@@ -46,36 +46,28 @@ return folder?.Path;
 
 ### macOS (Platforms/MacCatalyst/FolderPickerService.cs)
 
-Uses `NSOpenPanel` from AppKit framework.
+Uses `UIDocumentPickerViewController` from UIKit framework (MacCatalyst).
 
 **Key Features:**
-- Native macOS file picker
+- Native macOS file picker (via MacCatalyst/UIKit)
 - Configured for directories only
 - Runs on main thread (required for UI operations)
 
 **Implementation Details:**
 ```csharp
-var openPanel = new NSOpenPanel
-{
-    CanChooseFiles = false,
-    CanChooseDirectories = true,
-    AllowsMultipleSelection = false,
-    Title = "Select Folder"
-};
+var documentPicker = new UIDocumentPickerViewController(new string[] { "public.folder" }, UIDocumentPickerMode.Open);
+documentPicker.AllowsMultipleSelection = false;
+documentPicker.ShouldShowFileExtensions = true;
 
-await MainThread.InvokeOnMainThreadAsync(() =>
-{
-    var result = openPanel.RunModal();
-    if (result == 1) // NSModalResponse.OK
-    {
-        return openPanel.Url?.Path;
-    }
-});
+// ... event handlers ...
+
+var viewController = Platform.GetCurrentUIViewController();
+viewController?.PresentViewController(documentPicker, true, null);
 ```
 
 **Requirements:**
 - macOS 11.0 or higher
-- AppKit framework access
+- UIKit framework access (standard in MacCatalyst)
 
 ### iOS (Platforms/iOS/FolderPickerService.cs)
 

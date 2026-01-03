@@ -1,6 +1,7 @@
 using Foundation;
-using AppKit;
+using UIKit;
 using KopioRapido.Services;
+using Microsoft.Maui.ApplicationModel;
 
 namespace KopioRapido.Platforms.MacCatalyst;
 
@@ -12,23 +13,52 @@ public class FolderPickerService : IFolderPickerService
 
         await MainThread.InvokeOnMainThreadAsync(() =>
         {
-            var openPanel = new NSOpenPanel
+            try
             {
-                CanChooseFiles = false,
-                CanChooseDirectories = true,
-                AllowsMultipleSelection = false,
-                Title = "Select Folder"
-            };
+                var documentPicker = new UIDocumentPickerViewController(new string[] { "public.folder" }, UIDocumentPickerMode.Open);
+                documentPicker.AllowsMultipleSelection = false;
+                documentPicker.ShouldShowFileExtensions = true;
 
-            var result = openPanel.RunModal();
+                documentPicker.DidPickDocumentAtUrls += (sender, e) =>
+                {
+                    var url = e.Urls.FirstOrDefault();
+                    tcs.TrySetResult(url?.Path);
+                };
 
-            if (result == 1) // NSModalResponse.OK
-            {
-                tcs.SetResult(openPanel.Url?.Path);
+                documentPicker.WasCancelled += (sender, e) =>
+                {
+                    tcs.TrySetResult(null);
+                };
+
+                var viewController = Platform.GetCurrentUIViewController();
+                
+                if (viewController != null)
+                {
+                    viewController.PresentViewController(documentPicker, true, null);
+                }
+                else
+                {
+                    // Fallback if Platform.GetCurrentUIViewController() returns null
+                    var window = UIApplication.SharedApplication.KeyWindow;
+                    var vc = window?.RootViewController;
+                    while (vc?.PresentedViewController != null)
+                    {
+                        vc = vc.PresentedViewController;
+                    }
+                    
+                    if (vc != null)
+                    {
+                        vc.PresentViewController(documentPicker, true, null);
+                    }
+                    else
+                    {
+                        tcs.TrySetException(new Exception("Could not find current view controller"));
+                    }
+                }
             }
-            else
+            catch (Exception ex)
             {
-                tcs.SetResult(null);
+                tcs.TrySetException(ex);
             }
         });
 

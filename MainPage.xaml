@@ -7,7 +7,7 @@
              Title="KopioRapido - High-Speed File Copy"
              x:DataType="viewmodels:MainViewModel">
 
-    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" Padding="20">
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto" Padding="20">
 
         <!-- Title -->
         <Label Grid.Row="0"
@@ -17,8 +17,8 @@
                HorizontalOptions="Center"
                Margin="0,0,0,20"/>
 
-        <!-- Dual Pane for Source and Destination -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,20,*" Margin="0,0,0,20">
+        <!-- Dual Pane for Source and Destination (Hidden during copy) -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,20,*" Margin="0,0,0,20" IsVisible="{Binding IsCopying, Converter={StaticResource InverseBoolConverter}}">
 
             <!-- Source Pane -->
             <Border x:Name="SourceBorder"
@@ -47,7 +47,7 @@
                                FontAttributes="Bold"
                                TextColor="White"/>
                         <Label Grid.Column="1"
-                               Text="{Binding SourceFiles.Count, StringFormat='{0} files'}"
+                               Text="{Binding SourcePaneHeader}"
                                FontSize="12"
                                TextColor="White"
                                VerticalOptions="Center"/>
@@ -124,6 +124,15 @@
                                                        VerticalOptions="Center"
                                                        FontAttributes="Bold"
                                                        IsVisible="{Binding IsRetrying}"/>
+                                                
+                                                <!-- Completed Checkmark -->
+                                                <Label Grid.Column="2" Grid.Row="0"
+                                                       Text="✓"
+                                                       FontSize="16"
+                                                       TextColor="{AppThemeBinding Light=#10B981, Dark=#34D399}"
+                                                       HorizontalOptions="End"
+                                                       VerticalOptions="Center"
+                                                       IsVisible="{Binding IsCompleted}"/>
 
                                                 <!-- Progress Bar -->
                                                 <ProgressBar Grid.Column="0" Grid.ColumnSpan="3" Grid.Row="1"
@@ -213,7 +222,7 @@
                                FontAttributes="Bold"
                                TextColor="White"/>
                         <Label Grid.Column="1"
-                               Text="{Binding DestinationFiles.Count, StringFormat='{0} copied'}"
+                               Text="{Binding DestinationPaneHeader}"
                                FontSize="12"
                                TextColor="White"
                                VerticalOptions="Center"/>
@@ -308,8 +317,204 @@
             </Border>
         </Grid>
 
+        <!-- Summary View (Visible during copy) - Compact Version -->
+        <Border Grid.Row="1" Margin="0,0,0,10" IsVisible="{Binding IsCopying}"
+                BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#1E1E1E}"
+                Stroke="{AppThemeBinding Light=#DDDDDD, Dark=#444444}"
+                StrokeThickness="2"
+                Padding="20,15">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="8"/>
+            </Border.StrokeShape>
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="20">
+                <VerticalStackLayout Grid.Column="0" Spacing="3">
+                    <Label Text="Completed"
+                           FontSize="11"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                           HorizontalOptions="Center"/>
+                    <Label Text="{Binding FilesCompleted, StringFormat='{0:N0}'}"
+                           FontSize="28"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#10B981, Dark=#34D399}"/>
+                    <Label Text="{Binding TotalSourceFileCount, StringFormat='of {0:N0} files'}"
+                           FontSize="11"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                           HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Grid.Column="1" Spacing="3">
+                    <Label Text="In Progress"
+                           FontSize="11"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                           HorizontalOptions="Center"/>
+                    <Label Text="{Binding FilesInProgress, StringFormat='{0}'}"
+                           FontSize="28"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#F59E0B, Dark=#FBBF24}"/>
+                    <Label Text="active"
+                           FontSize="11"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                           HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Grid.Column="2" Spacing="3">
+                    <Label Text="Remaining"
+                           FontSize="11"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                           HorizontalOptions="Center"/>
+                    <Label Text="{Binding FilesRemaining, StringFormat='{0:N0}'}"
+                           FontSize="28"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"/>
+                    <Label Text="files"
+                           FontSize="11"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                           HorizontalOptions="Center"/>
+                </VerticalStackLayout>
+            </Grid>
+        </Border>
+
+        <!-- Strategy Information Panel (Visible when strategy is selected) -->
+        <Border Grid.Row="2" Margin="0,0,0,10" IsVisible="{Binding ShowStrategyInfo}"
+                BackgroundColor="{AppThemeBinding Light=#F8FAFC, Dark=#1E293B}"
+                Stroke="{AppThemeBinding Light=#E2E8F0, Dark=#334155}"
+                StrokeThickness="2"
+                Padding="20">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="8"/>
+            </Border.StrokeShape>
+            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="15">
+                <!-- Strategy Header -->
+                <HorizontalStackLayout Grid.Row="0" Spacing="10">
+                    <Label Text="{Binding StrategyEmoji}"
+                           FontSize="24"
+                           VerticalOptions="Center"/>
+                    <VerticalStackLayout Spacing="2">
+                        <Label Text="Transfer Strategy"
+                               FontSize="12"
+                               FontAttributes="Bold"
+                               TextColor="{AppThemeBinding Light=#64748B, Dark=#94A3B8}"/>
+                        <Label Text="{Binding StrategyName}"
+                               FontSize="16"
+                               FontAttributes="Bold"
+                               TextColor="{AppThemeBinding Light=#0F172A, Dark=#F1F5F9}"/>
+                    </VerticalStackLayout>
+                </HorizontalStackLayout>
+
+                <!-- Storage Profiles -->
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" ColumnSpacing="15">
+                    <!-- Source Storage -->
+                    <Border Grid.Column="0"
+                            BackgroundColor="{AppThemeBinding Light=#DBEAFE, Dark=#1E3A8A}"
+                            Padding="12,10">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="6"/>
+                        </Border.StrokeShape>
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Source Storage"
+                                   FontSize="10"
+                                   TextColor="{AppThemeBinding Light=#1E40AF, Dark=#93C5FD}"/>
+                            <Label Text="{Binding SourceStorageType}"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="{AppThemeBinding Light=#1E3A8A, Dark=#BFDBFE}"/>
+                            <Label Text="{Binding SourceStorageSpeed}"
+                                   FontSize="11"
+                                   TextColor="{AppThemeBinding Light=#3B82F6, Dark=#93C5FD}"/>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Arrow -->
+                    <Label Grid.Column="1"
+                           Text="→"
+                           FontSize="24"
+                           VerticalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#64748B, Dark=#94A3B8}"/>
+
+                    <!-- Destination Storage -->
+                    <Border Grid.Column="2"
+                            BackgroundColor="{AppThemeBinding Light=#D1FAE5, Dark=#065F46}"
+                            Padding="12,10">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="6"/>
+                        </Border.StrokeShape>
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Destination Storage"
+                                   FontSize="10"
+                                   TextColor="{AppThemeBinding Light=#047857, Dark=#6EE7B7}"/>
+                            <Label Text="{Binding DestStorageType}"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="{AppThemeBinding Light=#065F46, Dark=#A7F3D0}"/>
+                            <Label Text="{Binding DestStorageSpeed}"
+                                   FontSize="11"
+                                   TextColor="{AppThemeBinding Light=#059669, Dark=#6EE7B7}"/>
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <!-- Strategy Details -->
+                <VerticalStackLayout Grid.Row="2" Spacing="8">
+                    <HorizontalStackLayout Spacing="6">
+                        <Label Text="💡"
+                               FontSize="14"/>
+                        <Label Text="{Binding StrategyReasoning}"
+                               FontSize="12"
+                               TextColor="{AppThemeBinding Light=#475569, Dark=#CBD5E1}"
+                               LineBreakMode="WordWrap"/>
+                    </HorizontalStackLayout>
+
+                    <!-- Compression Badge -->
+                    <HorizontalStackLayout Spacing="6" IsVisible="{Binding CompressionEnabled}">
+                        <Label Text="🗜️"
+                               FontSize="14"/>
+                        <Border BackgroundColor="{AppThemeBinding Light=#FEF3C7, Dark=#78350F}"
+                                Padding="8,4">
+                            <Border.StrokeShape>
+                                <RoundRectangle CornerRadius="4"/>
+                            </Border.StrokeShape>
+                            <Label Text="{Binding CompressionInfo}"
+                                   FontSize="11"
+                                   FontAttributes="Bold"
+                                   TextColor="{AppThemeBinding Light=#92400E, Dark=#FDE68A}"/>
+                        </Border>
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Grid>
+        </Border>
+
         <!-- Progress Section (Only visible when copying) -->
-        <VerticalStackLayout Grid.Row="2" Spacing="10" Margin="0,0,0,20" IsVisible="{Binding IsCopying}">
+        <VerticalStackLayout Grid.Row="3" Spacing="10" Margin="0,0,0,20" IsVisible="{Binding IsCopying}">
+
+            <!-- Current File Info (Compact) -->
+            <Border BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#2A2A2A}"
+                    Padding="12,8">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="4"/>
+                </Border.StrokeShape>
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                    <Label Grid.Column="0"
+                           Text="Current:"
+                           FontSize="11"
+                           TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                           VerticalOptions="Center"/>
+                    <Label Grid.Column="1"
+                           Text="{Binding CurrentFileName}"
+                           FontSize="12"
+                           LineBreakMode="TailTruncation"
+                           VerticalOptions="Center"/>
+                    <Label Grid.Column="2"
+                           Text="{Binding CurrentFileProgress, StringFormat='{0:F0}%'}"
+                           FontSize="11"
+                           FontAttributes="Bold"
+                           TextColor="{AppThemeBinding Light=#0078D4, Dark=#60A5FA}"
+                           VerticalOptions="Center"
+                           IsVisible="{Binding ShowIndividualFileProgress}"/>
+                </Grid>
+            </Border>
 
             <!-- Overall Progress -->
             <Border BackgroundColor="{AppThemeBinding Light=#F8F8F8, Dark=#252525}"
@@ -359,36 +564,78 @@
                     </Grid>
                 </Grid>
             </Border>
+
+            <!-- Compression Stats (Visible when compression is active) -->
+            <Border IsVisible="{Binding CompressionEnabled}"
+                    BackgroundColor="{AppThemeBinding Light=#FFFBEB, Dark=#78350F}"
+                    Stroke="{AppThemeBinding Light=#FDE68A, Dark=#92400E}"
+                    StrokeThickness="1"
+                    Padding="15">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="6"/>
+                </Border.StrokeShape>
+                <Grid RowDefinitions="Auto,Auto" RowSpacing="8">
+                    <HorizontalStackLayout Grid.Row="0" Spacing="8">
+                        <Label Text="🗜️"
+                               FontSize="16"
+                               VerticalOptions="Center"/>
+                        <Label Text="Compression Active"
+                               FontSize="14"
+                               FontAttributes="Bold"
+                               TextColor="{AppThemeBinding Light=#92400E, Dark=#FDE68A}"
+                               VerticalOptions="Center"/>
+                    </HorizontalStackLayout>
+
+                    <Grid Grid.Row="1" ColumnDefinitions="*,*,*">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                            <Label Text="Compression Ratio"
+                                   FontSize="10"
+                                   TextColor="{AppThemeBinding Light=#92400E, Dark=#FDE68A}"/>
+                            <Label Text="{Binding OverallCompressionRatio, StringFormat='{0:F2}x'}"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="{AppThemeBinding Light=#78350F, Dark=#FEF3C7}"/>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Column="1" Spacing="2" HorizontalOptions="Center">
+                            <Label Text="Bandwidth Saved"
+                                   FontSize="10"
+                                   TextColor="{AppThemeBinding Light=#92400E, Dark=#FDE68A}"/>
+                            <Label Text="{Binding BandwidthSaved}"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="{AppThemeBinding Light=#78350F, Dark=#FEF3C7}"/>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Column="2" Spacing="2" HorizontalOptions="End">
+                            <Label Text="Compressed"
+                                   FontSize="10"
+                                   TextColor="{AppThemeBinding Light=#92400E, Dark=#FDE68A}"/>
+                            <Label Text="{Binding TotalCompressedBytes, Converter={StaticResource BytesToStringConverter}}"
+                                   FontSize="14"
+                                   FontAttributes="Bold"
+                                   TextColor="{AppThemeBinding Light=#78350F, Dark=#FEF3C7}"/>
+                        </VerticalStackLayout>
+                    </Grid>
+                </Grid>
+            </Border>
         </VerticalStackLayout>
 
-        <!-- Control Buttons (Only visible when has files to copy and destination selected) -->
-        <Grid Grid.Row="3" ColumnDefinitions="*,20,*" ColumnSpacing="0" Margin="0,0,0,20"
-              IsVisible="{Binding HasFilesToCopy}">
-            <Button Grid.Column="0"
-                    Text="Start Copy"
+        <!-- Control Button (Single button that toggles between Start Copy and Cancel) -->
+        <Grid Grid.Row="4" Margin="0,0,0,20" IsVisible="{Binding ShowStartButton}">
+            <Button Text="{Binding CopyButtonText}"
                     Command="{Binding StartCopyCommand}"
-                    BackgroundColor="{AppThemeBinding Light=#10B981, Dark=#059669}"
+                    BackgroundColor="{Binding CopyButtonColor}"
                     TextColor="White"
                     FontAttributes="Bold"
                     FontSize="16"
                     HeightRequest="50"
                     CornerRadius="8"
-                    IsEnabled="{Binding IsCopying, Converter={StaticResource InverseBoolConverter}}"/>
-
-            <Button Grid.Column="2"
-                    Text="Cancel"
-                    Command="{Binding CancelCopyCommand}"
-                    BackgroundColor="{AppThemeBinding Light=#EF4444, Dark=#DC2626}"
-                    TextColor="White"
-                    FontAttributes="Bold"
-                    FontSize="16"
-                    HeightRequest="50"
-                    CornerRadius="8"
-                    IsVisible="{Binding IsCopying}"/>
+                    HorizontalOptions="Fill"/>
         </Grid>
 
         <!-- Debug Log (temporary) -->
-        <Border Grid.Row="4"
+        <Border Grid.Row="5"
                 BackgroundColor="{AppThemeBinding Light=#FAFAFA, Dark=#1E1E1E}"
                 Stroke="{AppThemeBinding Light=#CCCCCC, Dark=#444444}"
                 StrokeThickness="1"

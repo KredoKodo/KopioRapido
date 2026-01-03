@@ -2,6 +2,7 @@ namespace KopioRapido.Models;
 
 public class FileTransferProgress
 {
+    public string OperationId { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public string SourcePath { get; set; } = string.Empty;
     public string DestinationPath { get; set; } = string.Empty;
@@ -17,4 +18,9 @@ public class FileTransferProgress
     public int MaxRetryAttempts { get; set; }
     public bool IsRetrying { get; set; }
     public string? LastError { get; set; }
+    
+    // Compression tracking
+    public bool IsCompressed { get; set; }
+    public long CompressedBytesTransferred { get; set; }
+    public double CompressionRatio { get; set; } = 1.0;
 }

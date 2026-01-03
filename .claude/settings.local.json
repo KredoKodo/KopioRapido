@@ -11,7 +11,9 @@
       "Bash(powershell -Command \"Stop-Process -Name KopioRapido -Force -ErrorAction SilentlyContinue\")",
       "Bash(dotnet build:*)",
       "Bash(powershell -Command \"Remove-Item -Recurse -Force ''Platforms\\\\iOS''\")",
-      "Bash(powershell -Command \"Remove-Item -Recurse -Force ''Platforms\\\\Android''\")"
+      "Bash(powershell -Command \"Remove-Item -Recurse -Force ''Platforms\\\\Android''\")",
+      "WebSearch",
+      "Bash(dotnet run:*)"
     ]
   }
 }
