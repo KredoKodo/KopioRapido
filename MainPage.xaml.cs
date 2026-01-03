@@ -5,6 +5,11 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 #endif
 
+#if IOS || MACCATALYST
+using UIKit;
+using Foundation;
+#endif
+
 namespace KopioRapido;
 
 public partial class MainPage : ContentPage
@@ -26,12 +31,6 @@ public partial class MainPage : ContentPage
             // Wire up the GraphicsView to the ViewModel (progress circle only)
             // viewModel.SetProgressGraphicsView(ProgressGraphicsView);
 
-#if WINDOWS || MACCATALYST
-            DiagnosticLogger.Log("Registering Loaded event for drag-drop...");
-            // Configure native drag-drop after the page is loaded
-            Loaded += OnPageLoaded;
-#endif
-
             DiagnosticLogger.Log("=== MainPage constructor SUCCESS ===");
         }
         catch (Exception ex)
@@ -40,125 +39,6 @@ public partial class MainPage : ContentPage
             throw;
         }
     }
-
-#if WINDOWS || MACCATALYST
-    private void OnPageLoaded(object? sender, EventArgs e)
-    {
-        DiagnosticLogger.Log("=== OnPageLoaded START ===");
-        try
-        {
-            DiagnosticLogger.Log("Finding SourceBorder...");
-            // Find the Border elements by name and configure native drag-drop
-            if (this.FindByName("SourceBorder") is Border sourceBorder)
-            {
-                DiagnosticLogger.Log("Configuring drag-drop for SourceBorder...");
-#if WINDOWS
-                Platforms.Windows.DragDropHelper.ConfigureDragDrop(sourceBorder, async path =>
-                {
-                    await HandleNativeDrop(path, isSource: true);
-                });
-#elif MACCATALYST
-                Platforms.MacCatalyst.DragDropHelper.ConfigureDragDrop(sourceBorder, async path =>
-                {
-                    await HandleNativeDrop(path, isSource: true);
-                }, ViewModel.AddLogMessage);
-#endif
-            }
-            else
-            {
-                DiagnosticLogger.Log("WARNING: SourceBorder not found!");
-            }
-
-            DiagnosticLogger.Log("Finding DestinationBorder...");
-            if (this.FindByName("DestinationBorder") is Border destinationBorder)
-            {
-                DiagnosticLogger.Log("Configuring drag-drop for DestinationBorder...");
-#if WINDOWS
-                Platforms.Windows.DragDropHelper.ConfigureDragDrop(destinationBorder, async path =>
-                {
-                    await HandleNativeDrop(path, isSource: false);
-                });
-#elif MACCATALYST
-                Platforms.MacCatalyst.DragDropHelper.ConfigureDragDrop(destinationBorder, async path =>
-                {
-                    await HandleNativeDrop(path, isSource: false);
-                }, ViewModel.AddLogMessage);
-#endif
-            }
-            else
-            {
-                DiagnosticLogger.Log("WARNING: DestinationBorder not found!");
-            }
-
-            DiagnosticLogger.Log("=== OnPageLoaded SUCCESS ===");
-        }
-        catch (Exception ex)
-        {
-            DiagnosticLogger.LogException("OnPageLoaded", ex);
-        }
-    }
-
-    private async Task HandleNativeDrop(string path, bool isSource)
-    {
-        if (ViewModel.IsCopying)
-        {
-            await DisplayAlertAsync("Operation in Progress",
-                "Cannot change paths while copying is in progress.",
-                "OK");
-            return;
-        }
-
-        try
-        {
-            ViewModel.AddLogMessage($"Received drop: {path}");
-
-            // Validate it's a directory
-            if (Directory.Exists(path))
-            {
-                if (isSource)
-                {
-                    await ViewModel.SetSourcePathAsync(path);
-                    ViewModel.AddLogMessage($"✓ Source folder set: {path}");
-                }
-                else
-                {
-                    ViewModel.DestinationPath = path;
-                    ViewModel.AddLogMessage($"✓ Destination folder set: {path}");
-                }
-            }
-            else if (File.Exists(path))
-            {
-                // If it's a file, use its parent directory
-                var directory = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(directory))
-                {
-                    if (isSource)
-                    {
-                        await ViewModel.SetSourcePathAsync(directory);
-                    }
-                    else
-                    {
-                        ViewModel.DestinationPath = directory;
-                    }
-                    ViewModel.AddLogMessage($"✓ Using parent folder: {directory}");
-                }
-            }
-            else
-            {
-                await DisplayAlertAsync("Invalid Path",
-                    $"The path does not exist: {path}",
-                    "OK");
-            }
-        }
-        catch (Exception ex)
-        {
-            ViewModel.AddLogMessage($"Drop error: {ex.Message}");
-            await DisplayAlertAsync("Error",
-                $"Failed to process dropped item: {ex.Message}",
-                "OK");
-        }
-    }
-#endif
 
     private void OnCloseClicked(object sender, EventArgs e)
     {
@@ -209,6 +89,181 @@ public partial class MainPage : ContentPage
         {
             var operationType = picker.Items[picker.SelectedIndex];
             ViewModel.SelectOperationCommand.Execute(operationType);
+        }
+    }
+
+    // MAUI DropGestureRecognizer handlers
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        // Accept the drag operation
+        e.AcceptedOperation = DataPackageOperation.Copy;
+    }
+
+    private async void OnSourceDrop(object? sender, DropEventArgs e)
+    {
+        ViewModel.AddLogMessage("🎯 Source drop event fired!");
+        var path = await GetDroppedFilePathAsync(e);
+        if (!string.IsNullOrEmpty(path))
+        {
+            await HandleDropAsync(path, isSource: true);
+        }
+    }
+
+    private async void OnDestinationDrop(object? sender, DropEventArgs e)
+    {
+        ViewModel.AddLogMessage("🎯 Destination drop event fired!");
+        var path = await GetDroppedFilePathAsync(e);
+        if (!string.IsNullOrEmpty(path))
+        {
+            await HandleDropAsync(path, isSource: false);
+        }
+    }
+
+    private async Task<string?> GetDroppedFilePathAsync(DropEventArgs e)
+    {
+        try
+        {
+#if IOS || MACCATALYST
+            ViewModel.AddLogMessage("📱 MacCatalyst: Accessing drop session...");
+            var session = e.PlatformArgs?.DropSession;
+            if (session == null)
+            {
+                ViewModel.AddLogMessage("❌ DropSession is null");
+                return null;
+            }
+
+            ViewModel.AddLogMessage($"📦 Session has {session.Items.Length} items");
+
+            foreach (var item in session.Items)
+            {
+                ViewModel.AddLogMessage($"📄 Processing item with {item.ItemProvider.RegisteredTypeIdentifiers.Length} type identifiers");
+
+                var typeIds = item.ItemProvider.RegisteredTypeIdentifiers.ToList();
+                foreach (var typeId in typeIds)
+                {
+                    ViewModel.AddLogMessage($"   - Type: {typeId}");
+                }
+
+                var result = await LoadItemAsync(item.ItemProvider, typeIds);
+                if (result != null)
+                {
+                    ViewModel.AddLogMessage($"✅ Got file path: {result}");
+                    return result;
+                }
+            }
+
+            ViewModel.AddLogMessage("❌ No file path extracted");
+            return null;
+
+            static async Task<string?> LoadItemAsync(
+                NSItemProvider itemProvider, List<string> typeIdentifiers)
+            {
+                if (typeIdentifiers == null || typeIdentifiers.Count == 0)
+                    return null;
+
+                var typeIdent = typeIdentifiers.First();
+                if (itemProvider.HasItemConformingTo(typeIdent))
+                {
+                    try
+                    {
+                        var loadResult = await itemProvider.LoadInPlaceFileRepresentationAsync(typeIdent);
+                        if (loadResult?.FileUrl?.Path != null)
+                        {
+                            return loadResult.FileUrl.Path;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error loading {typeIdent}: {ex.Message}");
+                    }
+                }
+                typeIdentifiers.Remove(typeIdent);
+                return await LoadItemAsync(itemProvider, typeIdentifiers);
+            }
+#elif WINDOWS
+            ViewModel.AddLogMessage("🪟 Windows: Accessing DataView...");
+            if (e.Data?.Properties?.ContainsKey("Files") == true)
+            {
+                var files = e.Data.Properties["Files"] as IEnumerable<IStorageItem>;
+                var firstFile = files?.FirstOrDefault();
+                if (firstFile != null)
+                {
+                    ViewModel.AddLogMessage($"✅ Got file path: {firstFile.Path}");
+                    return firstFile.Path;
+                }
+            }
+            ViewModel.AddLogMessage("❌ No files in DataView");
+            return null;
+#else
+            ViewModel.AddLogMessage("❌ Platform not supported");
+            return null;
+#endif
+        }
+        catch (Exception ex)
+        {
+            ViewModel.AddLogMessage($"❌ Exception in GetDroppedFilePathAsync: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task HandleDropAsync(string path, bool isSource)
+    {
+        if (ViewModel.IsCopying)
+        {
+            await DisplayAlertAsync("Operation in Progress",
+                "Cannot change paths while copying is in progress.",
+                "OK");
+            return;
+        }
+
+        try
+        {
+            ViewModel.AddLogMessage($"📂 Processing path: {path}");
+
+            // Validate it's a directory
+            if (Directory.Exists(path))
+            {
+                if (isSource)
+                {
+                    await ViewModel.SetSourcePathAsync(path);
+                    ViewModel.AddLogMessage($"✓ Source folder set: {path}");
+                }
+                else
+                {
+                    ViewModel.DestinationPath = path;
+                    ViewModel.AddLogMessage($"✓ Destination folder set: {path}");
+                }
+            }
+            else if (File.Exists(path))
+            {
+                // If it's a file, use its parent directory
+                var directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    if (isSource)
+                    {
+                        await ViewModel.SetSourcePathAsync(directory);
+                    }
+                    else
+                    {
+                        ViewModel.DestinationPath = directory;
+                    }
+                    ViewModel.AddLogMessage($"✓ Using parent folder: {directory}");
+                }
+            }
+            else
+            {
+                await DisplayAlertAsync("Invalid Path",
+                    $"The path does not exist: {path}",
+                    "OK");
+            }
+        }
+        catch (Exception ex)
+        {
+            ViewModel.AddLogMessage($"❌ Drop error: {ex.Message}");
+            await DisplayAlertAsync("Error",
+                $"Failed to process dropped item: {ex.Message}",
+                "OK");
         }
     }
 }

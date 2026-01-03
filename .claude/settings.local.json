@@ -16,7 +16,9 @@
       "Bash(dotnet run:*)",
       "Bash(pkill:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "WebFetch(domain:vladislavantonyuk.github.io)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
