@@ -17,6 +17,15 @@ public class CopyOperation
     public string? ErrorMessage { get; set; }
     public bool CanResume { get; set; }
     public List<CompletedFileInfo> CompletedFiles { get; set; } = new();
+    
+    // Operation-specific stats
+    public int FilesDeleted { get; set; }
+    public int FilesSkipped { get; set; }
+    
+    // Compression stats
+    public long TotalCompressedBytes { get; set; }
+    public long TotalUncompressedBytes { get; set; }
+    public int FilesCompressed { get; set; }
 }
 
 public class CompletedFileInfo

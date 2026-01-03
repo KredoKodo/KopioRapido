@@ -67,6 +67,56 @@ public class FolderPickerService : IFolderPickerService
         return await tcs.Task;
     }
 
+    public async Task<string?> SaveFileAsync(string defaultFileName, string fileExtension, string fileContent)
+    {
+        var tcs = new TaskCompletionSource<string?>();
+
+        await MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            try
+            {
+                // Create a temporary file with the content
+                var tempPath = Path.Combine(Path.GetTempPath(), defaultFileName);
+                await File.WriteAllTextAsync(tempPath, fileContent);
+                
+                var fileUrl = NSUrl.FromFilename(tempPath);
+                var documentPicker = new UIDocumentPickerViewController(new[] { fileUrl }, UIDocumentPickerMode.ExportToService);
+                
+                documentPicker.DidPickDocumentAtUrls += (sender, e) =>
+                {
+                    var url = e.Urls.FirstOrDefault();
+                    // Clean up temp file
+                    try { File.Delete(tempPath); } catch { }
+                    tcs.TrySetResult(url?.Path);
+                };
+
+                documentPicker.WasCancelled += (sender, e) =>
+                {
+                    // Clean up temp file
+                    try { File.Delete(tempPath); } catch { }
+                    tcs.TrySetResult(null);
+                };
+
+                var viewController = Platform.GetCurrentUIViewController();
+                
+                if (viewController != null)
+                {
+                    viewController.PresentViewController(documentPicker, true, null);
+                }
+                else
+                {
+                    tcs.TrySetException(new Exception("Could not find current view controller"));
+                }
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+        });
+
+        return await tcs.Task;
+    }
+
     private static UIWindow? GetKeyWindow()
     {
         // Modern way to get key window without deprecated KeyWindow property

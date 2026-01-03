@@ -65,7 +65,14 @@ public class ProgressTrackerService : IProgressTrackerService
             return 0;
         }
 
-        return (operation.TotalBytesTransferred * 100.0) / operation.TotalBytesExpected;
+        // Include current file's progress for smoother progress bar updates
+        var totalTransferred = operation.TotalBytesTransferred;
+        if (operation.CurrentFile != null)
+        {
+            totalTransferred += operation.CurrentFile.BytesTransferred;
+        }
+
+        return (totalTransferred * 100.0) / operation.TotalBytesExpected;
     }
 
     public double GetCurrentSpeed(string operationId)

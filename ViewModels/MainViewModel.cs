@@ -48,7 +48,12 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CopyButtonText))]
+    [NotifyPropertyChangedFor(nameof(ShowStartButton))]
     private CopyOperationType _selectedOperation = CopyOperationType.Copy;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowStartButton))]
+    private bool _hasSelectedOperation = false;
 
     [ObservableProperty]
     private string _operationWarningMessage = string.Empty;
@@ -131,10 +136,11 @@ public partial class MainViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowStartButton))]
     private bool _hasFilesToCopy;
 
-    // Show start button only when both paths are selected
+    // Show start button only when both paths are selected AND an operation type is chosen
     public bool ShowStartButton => !string.IsNullOrWhiteSpace(SourcePath) &&
                                    !string.IsNullOrWhiteSpace(DestinationPath) &&
-                                   HasFilesToCopy;
+                                   HasFilesToCopy &&
+                                   HasSelectedOperation;
 
     [ObservableProperty]
     private int _totalSourceFileCount;
@@ -330,11 +336,32 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ClearSource()
+    {
+        SourcePath = string.Empty;
+        SourceFiles.Clear();
+        _allSourceFiles.Clear();
+        _sourceFilesByName.Clear();
+        HasFilesToCopy = false;
+        TotalSourceFileCount = 0;
+        AddLogMessage("Source cleared");
+    }
+
+    [RelayCommand]
+    private void ClearDestination()
+    {
+        DestinationPath = string.Empty;
+        DestinationFiles.Clear();
+        AddLogMessage("Destination cleared");
+    }
+
+    [RelayCommand]
     private void SelectOperation(string operationType)
     {
         if (Enum.TryParse<CopyOperationType>(operationType, out var operation))
         {
             SelectedOperation = operation;
+            HasSelectedOperation = true; // User has now explicitly selected an operation
 
             // Set description, warnings, and info messages based on operation type
             (OperationDescription, OperationWarningMessage, ShowOperationWarning, OperationInfoMessage, ShowOperationInfo) = operation switch
@@ -388,14 +415,14 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(CanStartCopy))]
-    private async Task StartCopyAsync()
+    private void StartCopy()
     {
-        // If already copying, this acts as cancel button
+        // If already copying, this acts as cancel button - handle immediately and synchronously
         if (IsCopying)
         {
+            AddLogMessage("🛑 Cancel requested - stopping operation...");
             _currentOperationCts?.Cancel();
             StatusMessage = "Cancelling...";
-            AddLogMessage("Cancel requested");
             return;
         }
         
@@ -405,6 +432,12 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        // Start new operation as fire-and-forget (allows button to remain responsive)
+        _ = StartNewOperationAsync();
+    }
+
+    private async Task StartNewOperationAsync()
+    {
         IsCopying = true;
         _operationStartTime = DateTime.Now;
         _currentOperationId = null; // Reset so new operation ID is picked up from progress
@@ -623,14 +656,58 @@ public partial class MainViewModel : ObservableObject
             }
         }
 
-        var summary = $"Copy Operation Completed\n\n" +
-                     $"Files Copied: {operation.FilesTransferred:N0}\n" +
-                     $"Folders: {directories.Count:N0}\n" +
-                     $"Total Size: {FormatBytes(operation.BytesTransferred)}\n\n" +
-                     $"Started: {startTime:g}\n" +
-                     $"Finished: {endTime:g}\n" +
-                     $"Duration: {FormatDuration(duration)}\n\n" +
-                     $"Average Speed: {FormatBytes((long)(operation.BytesTransferred / duration.TotalSeconds))}/s";
+        // Build operation-specific summary
+        string title = operation.OperationType switch
+        {
+            CopyOperationType.Copy => "Copy Complete",
+            CopyOperationType.Move => "Move Complete",
+            CopyOperationType.Sync => "Sync Complete",
+            CopyOperationType.Mirror => "Mirror Complete",
+            CopyOperationType.BiDirectionalSync => "Bi-Directional Sync Complete",
+            _ => "Operation Complete"
+        };
+
+        var summary = $"{operation.OperationType} Operation Completed\n\n";
+        
+        // Core stats (all operations)
+        summary += $"Files Transferred: {operation.FilesTransferred:N0}\n";
+        
+        // Operation-specific stats
+        if (operation.OperationType == CopyOperationType.Move)
+        {
+            summary += $"Files Deleted from Source: {operation.FilesDeleted:N0}\n";
+        }
+        else if (operation.OperationType == CopyOperationType.Mirror)
+        {
+            summary += $"Files Deleted from Destination: {operation.FilesDeleted:N0}\n";
+        }
+        else if (operation.OperationType == CopyOperationType.Sync || 
+                 operation.OperationType == CopyOperationType.BiDirectionalSync)
+        {
+            summary += $"Files Skipped (already in sync): {operation.FilesSkipped:N0}\n";
+        }
+        
+        summary += $"Folders: {directories.Count:N0}\n";
+        summary += $"Total Size: {FormatBytes(operation.BytesTransferred)}\n";
+        
+        // Compression stats (if compression was used)
+        if (operation.FilesCompressed > 0)
+        {
+            var compressionRatio = operation.TotalCompressedBytes > 0 
+                ? (double)operation.TotalUncompressedBytes / operation.TotalCompressedBytes 
+                : 1.0;
+            var bandwidthSaved = operation.TotalUncompressedBytes - operation.TotalCompressedBytes;
+            
+            summary += $"\n🗜️ Compression:\n";
+            summary += $"Files Compressed: {operation.FilesCompressed:N0}\n";
+            summary += $"Bandwidth Saved: {FormatBytes(bandwidthSaved)}\n";
+            summary += $"Compression Ratio: {compressionRatio:F2}x\n";
+        }
+        
+        summary += $"\nStarted: {startTime:g}\n";
+        summary += $"Finished: {endTime:g}\n";
+        summary += $"Duration: {FormatDuration(duration)}\n\n";
+        summary += $"Average Speed: {FormatBytes((long)(operation.BytesTransferred / duration.TotalSeconds))}/s";
 
         // Reset everything BEFORE showing the alert
         ResetAfterCompletion();
@@ -639,7 +716,7 @@ public partial class MainViewModel : ObservableObject
         var window = Application.Current?.Windows?.FirstOrDefault();
         if (window?.Page != null)
         {
-            await window.Page.DisplayAlertAsync("Copy Complete", summary, "OK");
+            await window.Page.DisplayAlertAsync(title, summary, "OK");
         }
     }
 
@@ -710,8 +787,8 @@ public partial class MainViewModel : ObservableObject
             CurrentFileSize = progress.FileSize;
             CurrentFileProgress = progress.PercentComplete;
 
-            // Track compression metrics
-            if (progress.IsCompressed)
+            // Track compression metrics ONLY on file completion to avoid double-counting
+            if (isCompletion && progress.IsCompressed && !_completedFileNames.Contains(fileName))
             {
                 TotalUncompressedBytes += progress.BytesTransferred;
                 TotalCompressedBytes += progress.CompressedBytesTransferred;
@@ -781,6 +858,34 @@ public partial class MainViewModel : ObservableObject
         while (LogMessages.Count > 100)
         {
             LogMessages.RemoveAt(LogMessages.Count - 1);
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportLogAsync()
+    {
+        try
+        {
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+            var defaultFileName = $"KopioRapido_Log_{timestamp}.txt";
+
+            // Reverse the log messages so oldest is first
+            var logContent = string.Join(Environment.NewLine, LogMessages.Reverse());
+
+            var filePath = await _folderPicker.SaveFileAsync(defaultFileName, ".txt", logContent);
+            
+            if (filePath != null)
+            {
+                AddLogMessage($"✅ Log exported to: {filePath}");
+            }
+            else
+            {
+                AddLogMessage("Export cancelled");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogMessage($"❌ Failed to export log: {ex.Message}");
         }
     }
 

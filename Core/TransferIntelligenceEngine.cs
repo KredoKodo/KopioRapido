@@ -114,14 +114,20 @@ public class TransferIntelligenceEngine
         {
             strategy.UseCompression = true;
             
-            // Estimate compression benefit and update reasoning
+            // Calculate actual compressible ratio for messaging
             double compressibleRatio = (double)files.CompressibleFiles / files.TotalFiles;
-            int estimatedSpeedup = compressibleRatio > 0.7 ? 3 : compressibleRatio > 0.5 ? 2 : 1;
             
-            if (estimatedSpeedup > 1)
+            if (compressibleRatio > 0.5)
             {
-                strategy.Reasoning += $" + compression ({estimatedSpeedup}x faster for compressible files)";
+                // Majority are compressible - highlight compression
+                int estimatedSpeedup = compressibleRatio > 0.7 ? 3 : 2;
+                strategy.Reasoning += $" + compression ({estimatedSpeedup}x faster for {files.CompressibleFiles} compressible files)";
                 strategy.UserFriendlyDescription += " + compression";
+            }
+            else if (files.CompressibleFiles > 0)
+            {
+                // Minority are compressible - mention selective compression
+                strategy.Reasoning += $" + selective compression for {files.CompressibleFiles} text/code files";
             }
         }
         
@@ -130,20 +136,19 @@ public class TransferIntelligenceEngine
     
     private bool ShouldUseCompression(StorageProfile source, StorageProfile dest, FileSetProfile files)
     {
-        // Don't compress if mostly already compressed files
-        if (files.AlreadyCompressedFiles > files.TotalFiles * 0.7)
-            return false;
-        
-        // Don't compress if very few compressible files
-        if (files.CompressibleFiles < files.TotalFiles * 0.3)
-            return false;
+        // Enable selective compression if we're on a network and have ANY compressible files
+        // We'll compress on a per-file basis rather than all-or-nothing
         
         // Check if network is slow enough that compression helps
-        // If write speed is < 100 MB/s, compression likely helps
         bool slowNetwork = (source.IsRemote && source.SequentialWriteMBps < 100) ||
                           (dest.IsRemote && dest.SequentialWriteMBps < 100);
         
-        return slowNetwork;
+        if (!slowNetwork)
+            return false;
+        
+        // Enable if we have at least SOME compressible files (even if it's a small percentage)
+        // We'll selectively compress only those files
+        return files.CompressibleFiles > 0;
     }
     
     public string GenerateUserFriendlyMessage(StorageProfile source, StorageProfile dest, FileSetProfile files, TransferStrategy strategy)

@@ -60,6 +60,38 @@ public class StorageProfiler
     }
 #endif
 
+#if MACCATALYST
+    // P/Invoke declarations for macOS statfs
+    private const int MNT_LOCAL = 0x00001000; // Filesystem is local
+    private const int MFSTYPENAMELEN = 16;
+    private const int MAXPATHLEN = 1024;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct statfs
+    {
+        public uint f_bsize;      // fundamental file system block size
+        public int f_iosize;      // optimal transfer block size
+        public ulong f_blocks;    // total data blocks in file system
+        public ulong f_bfree;     // free blocks in fs
+        public ulong f_bavail;    // free blocks avail to non-superuser
+        public ulong f_files;     // total file nodes in file system
+        public ulong f_ffree;     // free file nodes in fs
+        public fixed int f_fsid[2];  // file system id
+        public uint f_owner;      // user that mounted the filesystem
+        public uint f_type;       // type of filesystem
+        public uint f_flags;      // copy of mount exported flags
+        public uint f_fssubtype;  // fs sub-type (flavor)
+        public fixed byte f_fstypename[MFSTYPENAMELEN]; // fs type name
+        public fixed byte f_mntonname[MAXPATHLEN];      // directory on which mounted
+        public fixed byte f_mntfromname[MAXPATHLEN];    // mounted filesystem
+        public uint f_reserved_1; // reserved for future use
+        public fixed uint f_reserved_2[4]; // reserved for future use
+    }
+
+    [DllImport("libc", EntryPoint = "statfs", SetLastError = true)]
+    private static extern unsafe int native_statfs(string path, statfs* buf);
+#endif
+
     private const int BenchmarkSizeMB = 10;
     
     public async Task<StorageProfile> ProfileStorageAsync(string path, CancellationToken cancellationToken = default)
@@ -70,7 +102,7 @@ public class StorageProfiler
             ProfiledAt = DateTime.UtcNow
         };
         
-        // Detect storage type
+        // Detect storage type (initial detection)
         profile.Type = DetectStorageType(path);
         profile.IsRemote = IsNetworkPath(path);
         profile.FileSystemType = GetFileSystemType(path);
@@ -82,6 +114,17 @@ public class StorageProfiler
             profile.SequentialWriteMBps = metrics.writeMBps;
             profile.SequentialReadMBps = metrics.readMBps;
             profile.LatencyMs = metrics.latencyMs;
+            
+            // Heuristic: If path is under /Volumes/ and speed is very slow (< 50 MB/s), 
+            // it's likely a network share that we failed to detect properly
+            // Note: On MacCatalyst, RuntimeInformation.IsOSPlatform(OSPlatform.OSX) returns false!
+            if (path.StartsWith("/Volumes/", StringComparison.OrdinalIgnoreCase) &&
+                profile.Type != StorageType.NetworkShare &&
+                metrics.writeMBps < 50)
+            {
+                profile.Type = StorageType.NetworkShare;
+                profile.IsRemote = true;
+            }
         }
         catch
         {
@@ -149,17 +192,38 @@ public class StorageProfiler
 #if MACCATALYST
         try
         {
-            // Check if path is on APFS (typically SSD) or HFS+ (could be HDD)
+            // First check DriveInfo.DriveType for network drives
+            try
+            {
+                var root = Path.GetPathRoot(path);
+                if (!string.IsNullOrEmpty(root))
+                {
+                    var driveInfo = new DriveInfo(root);
+                    if (driveInfo.DriveType == DriveType.Network)
+                        return StorageType.NetworkShare;
+                }
+            }
+            catch { }
+            
+            // Check filesystem type for network protocols
             var fsType = GetFileSystemType(path);
             
+            if (fsType.Contains("nfs", StringComparison.OrdinalIgnoreCase) || 
+                fsType.Contains("smb", StringComparison.OrdinalIgnoreCase) || 
+                fsType.Contains("cifs", StringComparison.OrdinalIgnoreCase) ||
+                fsType.Contains("afp", StringComparison.OrdinalIgnoreCase) ||
+                fsType.Contains("webdav", StringComparison.OrdinalIgnoreCase))
+            {
+                return StorageType.NetworkShare;
+            }
+            
+            // Check if APFS (typically SSD) or HFS+ (could be HDD)
             if (fsType.Contains("apfs", StringComparison.OrdinalIgnoreCase))
                 return StorageType.LocalSSD;
             else if (fsType.Contains("hfs", StringComparison.OrdinalIgnoreCase))
                 return StorageType.LocalHDD;
-            else if (fsType.Contains("nfs") || fsType.Contains("smb") || fsType.Contains("afp"))
-                return StorageType.NetworkShare;
             
-            // Check if external drive
+            // Check if external drive under /Volumes/
             if (path.StartsWith("/Volumes/", StringComparison.OrdinalIgnoreCase))
             {
                 // External drive, assume USB 3.0 for now
@@ -179,16 +243,76 @@ public class StorageProfiler
     
     private bool IsNetworkPath(string path)
     {
-        if (path.StartsWith("\\\\") || path.StartsWith("//"))
-            return true;
+        System.Diagnostics.Debug.WriteLine($"[StorageProfiler] ===== IsNetworkPath checking: {path} =====");
         
-        if (path.StartsWith("/Volumes/", StringComparison.OrdinalIgnoreCase))
+        // UNC paths (Windows/cross-platform)
+        if (path.StartsWith("\\\\") || path.StartsWith("//"))
         {
-            // Could be network mount on macOS
-            var fsType = GetFileSystemType(path);
-            return fsType.Contains("nfs") || fsType.Contains("smb") || fsType.Contains("afp");
+            System.Diagnostics.Debug.WriteLine($"[StorageProfiler] Detected UNC path");
+            return true;
         }
         
+#if MACCATALYST
+        // macOS: Use statfs to properly detect network mounts
+        // Note: No need to check RuntimeInformation.IsOSPlatform(OSPlatform.OSX) 
+        // because we're already in MACCATALYST conditional compilation
+        System.Diagnostics.Debug.WriteLine($"[StorageProfiler] Running on macOS, calling IsNetworkMountMacOS...");
+        if (IsNetworkMountMacOS(path))
+        {
+            System.Diagnostics.Debug.WriteLine($"[StorageProfiler] ✅ statfs detected network mount for: {path}");
+            return true;
+        }
+        System.Diagnostics.Debug.WriteLine($"[StorageProfiler] ❌ statfs did NOT detect network mount");
+#endif
+        
+        try
+        {
+            // Use DriveInfo.DriveType to detect network drives
+            var root = Path.GetPathRoot(path);
+            if (!string.IsNullOrEmpty(root))
+            {
+                var driveInfo = new DriveInfo(root);
+                
+                // Debug logging
+                System.Diagnostics.Debug.WriteLine($"[StorageProfiler] DriveInfo check:");
+                System.Diagnostics.Debug.WriteLine($"[StorageProfiler]   Path: {path}");
+                System.Diagnostics.Debug.WriteLine($"[StorageProfiler]   Root: {root}");
+                System.Diagnostics.Debug.WriteLine($"[StorageProfiler]   DriveType: {driveInfo.DriveType}");
+                System.Diagnostics.Debug.WriteLine($"[StorageProfiler]   DriveFormat: {driveInfo.DriveFormat}");
+                
+                if (driveInfo.DriveType == DriveType.Network)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[StorageProfiler] ✅ DriveInfo detected network");
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[StorageProfiler] DriveInfo exception: {ex.Message}");
+            // Fall through to filesystem type check
+        }
+        
+        // Fallback: Check filesystem type for network protocols (on any macOS-based system)
+#if MACCATALYST
+        if (path.StartsWith("/Volumes/", StringComparison.OrdinalIgnoreCase) || path.StartsWith("/"))
+        {
+            var fsType = GetFileSystemType(path);
+            System.Diagnostics.Debug.WriteLine($"[StorageProfiler] Filesystem type: {fsType}");
+            
+            if (fsType.Contains("nfs", StringComparison.OrdinalIgnoreCase) || 
+                fsType.Contains("smb", StringComparison.OrdinalIgnoreCase) || 
+                fsType.Contains("cifs", StringComparison.OrdinalIgnoreCase) ||
+                fsType.Contains("afp", StringComparison.OrdinalIgnoreCase) ||
+                fsType.Contains("webdav", StringComparison.OrdinalIgnoreCase))
+            {
+                System.Diagnostics.Debug.WriteLine($"[StorageProfiler] Detected as network share by filesystem type");
+                return true;
+            }
+        }
+#endif
+        
+        System.Diagnostics.Debug.WriteLine($"[StorageProfiler] NOT detected as network share");
         return false;
     }
     
@@ -198,10 +322,13 @@ public class StorageProfiler
         {
             var root = Path.GetPathRoot(path) ?? path;
             var driveInfo = new DriveInfo(root);
-            return driveInfo.DriveFormat;
+            var format = driveInfo.DriveFormat;
+            System.Diagnostics.Debug.WriteLine($"[StorageProfiler] GetFileSystemType({path}) -> Root: {root}, Format: {format}");
+            return format;
         }
-        catch
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"[StorageProfiler] GetFileSystemType exception: {ex.Message}");
             return "Unknown";
         }
     }
@@ -605,4 +732,48 @@ public class StorageProfiler
             catch { }
         }
     }
+
+#if MACCATALYST
+    private unsafe bool IsNetworkMountMacOS(string path)
+    {
+        try
+        {
+            statfs buf;
+            int result = native_statfs(path, &buf);
+            
+            if (result != 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"[StorageProfiler] statfs failed for {path}, errno: {Marshal.GetLastWin32Error()}");
+                return false;
+            }
+            
+            // Extract filesystem type name
+            string fsTypeName = Marshal.PtrToStringAnsi(new IntPtr(buf.f_fstypename)) ?? "";
+            
+            // Check if MNT_LOCAL flag is NOT set (meaning it's remote/network)
+            bool isNotLocal = (buf.f_flags & MNT_LOCAL) == 0;
+            
+            // Check if filesystem type is a known network protocol
+            bool isNetworkFS = fsTypeName.Equals("smbfs", StringComparison.OrdinalIgnoreCase) ||
+                               fsTypeName.Equals("nfs", StringComparison.OrdinalIgnoreCase) ||
+                               fsTypeName.Equals("afpfs", StringComparison.OrdinalIgnoreCase) ||
+                               fsTypeName.Equals("webdav", StringComparison.OrdinalIgnoreCase) ||
+                               fsTypeName.Equals("cifs", StringComparison.OrdinalIgnoreCase);
+            
+            System.Diagnostics.Debug.WriteLine($"[StorageProfiler] statfs for {path}:");
+            System.Diagnostics.Debug.WriteLine($"  f_fstypename: {fsTypeName}");
+            System.Diagnostics.Debug.WriteLine($"  f_flags: 0x{buf.f_flags:X}");
+            System.Diagnostics.Debug.WriteLine($"  MNT_LOCAL set: {!isNotLocal}");
+            System.Diagnostics.Debug.WriteLine($"  Is network FS: {isNetworkFS}");
+            System.Diagnostics.Debug.WriteLine($"  Result: {isNotLocal || isNetworkFS}");
+            
+            return isNotLocal || isNetworkFS;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[StorageProfiler] IsNetworkMountMacOS exception: {ex.Message}");
+            return false;
+        }
+    }
+#endif
 }

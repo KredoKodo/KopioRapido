@@ -219,12 +219,6 @@ public class FileCopyEngine
         // Check if we should use compression for this file
         bool useCompression = strategy?.UseCompression == true && 
                               CompressionHelper.ShouldCompressFile(sourceFile);
-        
-        if (useCompression)
-        {
-            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
-                $"Using compression for: {fileName}");
-        }
 
         // Wrap the copy operation with retry logic
         await RetryHelper.ExecuteWithRetryAsync(
@@ -477,6 +471,9 @@ public class FileCopyEngine
         // The destination file will be identical to source (not compressed)
         // Bandwidth savings come from compressed data during transfer
         
+        await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+            $"Compressing: {fileName} ({FormatBytes(fileSize)})");
+        
         var stopwatch = Stopwatch.StartNew();
         long totalCompressedBytes = 0;
         long totalUncompressedBytes = 0;
@@ -538,7 +535,7 @@ public class FileCopyEngine
             var savedPercentage = totalUncompressedBytes > 0 ? (savedBytes * 100.0 / totalUncompressedBytes) : 0;
             
             await _loggingService.LogAsync(operation.Id, LogLevel.Info,
-                $"Compressed {fileName}: {finalCompressionRatio:F2}x ratio, saved {FormatBytes(savedBytes)} ({savedPercentage:F1}%) - {compressionElapsed.TotalSeconds:F2}s");
+                $"Compressed {fileName}: {finalCompressionRatio:F2}x ratio, saved {FormatBytes(savedBytes)} ({savedPercentage:F1}%)");
             
             // Step 2: Decompress to final destination
             // In a real network scenario, this happens on the remote machine
@@ -551,9 +548,15 @@ public class FileCopyEngine
             }
             
             stopwatch.Stop();
+            var decompressionTime = stopwatch.Elapsed - compressionElapsed;
             
-            await _loggingService.LogAsync(operation.Id, LogLevel.Info,
-                $"Decompressed {fileName} - Total time: {stopwatch.Elapsed.TotalSeconds:F2}s (compression: {compressionElapsed.TotalSeconds:F2}s)");
+            await _loggingService.LogAsync(operation.Id, LogLevel.Debug,
+                $"Decompressed {fileName} in {decompressionTime.TotalSeconds:F2}s");
+            
+            // Update operation compression stats
+            operation.FilesCompressed++;
+            operation.TotalUncompressedBytes += totalUncompressedBytes;
+            operation.TotalCompressedBytes += totalCompressedBytes;
             
             // Report final progress
             var finalProgress = new FileTransferProgress
@@ -1011,6 +1014,9 @@ public class FileCopyEngine
             await _loggingService.LogAsync(operation.Id, LogLevel.Info,
                 $"Sync analysis: {plan.TotalFilesToCopy} files to copy, {comparison.IdenticalFiles.Count} identical (skipped)");
 
+            // Track skipped files
+            operation.FilesSkipped = comparison.IdenticalFiles.Count;
+
             // Mark identical files as already completed
             foreach (var identicalFile in plan.IdenticalFilesToSkip)
             {
@@ -1020,6 +1026,9 @@ public class FileCopyEngine
             // Update operation totals
             operation.TotalFiles = plan.TotalFilesToCopy;
             operation.TotalBytes = plan.TotalBytesToCopy;
+            
+            // Set progress tracker totals
+            _progressTracker.SetTotalSize(operation.Id, operation.TotalBytes, operation.TotalFiles);
 
             // Copy only files that need to be copied
             await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);
@@ -1090,6 +1099,9 @@ public class FileCopyEngine
             // Update operation totals
             operation.TotalFiles = plan.TotalFilesToCopy;
             operation.TotalBytes = plan.TotalBytesToCopy;
+            
+            // Set progress tracker totals
+            _progressTracker.SetTotalSize(operation.Id, operation.TotalBytes, operation.TotalFiles);
 
             // Phase 1: Copy missing/newer files
             await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);
@@ -1105,6 +1117,7 @@ public class FileCopyEngine
                     try
                     {
                         File.Delete(fileToDelete);
+                        operation.FilesDeleted++;
                         await _loggingService.LogAsync(operation.Id, LogLevel.Info, $"Deleted: {Path.GetFileName(fileToDelete)}");
                     }
                     catch (Exception ex)
@@ -1185,6 +1198,9 @@ public class FileCopyEngine
             // Update operation totals
             operation.TotalFiles = plan.TotalFilesToCopy;
             operation.TotalBytes = plan.TotalBytesToCopy;
+            
+            // Set progress tracker totals
+            _progressTracker.SetTotalSize(operation.Id, operation.TotalBytes, operation.TotalFiles);
 
             // Phase 1: Copy from source to destination
             await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);
@@ -1262,6 +1278,7 @@ public class FileCopyEngine
                 if (File.Exists(sourceFile))
                 {
                     File.Delete(sourceFile);
+                    operation.FilesDeleted++;
                     await _loggingService.LogAsync(operation.Id, LogLevel.Info, $"Deleted source: {relativePath}");
                 }
             }
@@ -1328,7 +1345,7 @@ public class FileCopyEngine
             }
 
             // Copy file
-            await CopyFileAsync(operation, sourceFile, destFile, progress, cancellationToken);
+            await CopyFileAsync(operation, sourceFile, destFile, progress, cancellationToken, relativePath, strategy);
         }
     }
 }

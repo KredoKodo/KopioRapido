@@ -181,7 +181,7 @@ Don't use `DropGestureRecognizer`. See Native Drag-and-Drop section above.
 - **StorageProfiler**: Benchmarks devices (SSD/HDD/Network/USB detection)
 - **FileAnalyzer**: Categorizes files by size and compressibility
 - **PerformanceMonitorService**: Real-time adaptive concurrency adjustment
-- **Transparent Compression**: Brotli compression for network transfers
+- **Selective Compression**: Brotli compression for compressible files (text/code/logs) on network transfers
 - **Integrated with MainViewModel**: Rich logging with emojis and explanations
 
 ### ✅ Adaptive Window Sizing with Golden Ratio
@@ -198,6 +198,7 @@ See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADA
 - **Windows USB Detection**: WMI queries match USB controllers (xHCI=USB3, EHCI=USB2) and device properties
 - **macOS SSD Detection**: `diskutil info` parses "Solid State: Yes" with APFS filesystem fallback
 - **macOS USB Detection**: `diskutil info` and `system_profiler SPUSBDataType` parse USB speed indicators
+- **Network Share Detection (macOS)**: Heuristic fallback for SMB/NFS detection (paths under /Volumes/ with speed < 50 MB/s)
 - **Graceful Fallbacks**: Assumes SSD/USB3 on detection failures (optimistic, allows benchmarking to compensate)
 - **Dependencies**: System.Management (Windows-only) for WMI, built-in CLI tools on macOS
 
@@ -212,9 +213,9 @@ See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADA
 - **UI Implementation**:
   - Dropdown selector in middle pane between source/destination
   - Dynamic description panel with operation-specific explanations
-  - Yellow info boxes for safe operations (Copy)
-  - Red warning boxes for destructive operations (Move, Mirror)
+  - Operation type selection required before Start button appears
   - Start button text dynamically updates based on selected operation
+  - Clear buttons for source/destination panes
 
 - **Architecture**:
   - `FileComparisonHelper` compares directories by size + timestamp (fast, no hash)
@@ -222,6 +223,22 @@ See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADA
   - Each operation type has dedicated method in `FileCopyEngine`
   - Move operation only deletes source files, never destination files
   - Resume support works across all operation types
+  - Strategy parameter properly propagated through `CopyFilesFromListAsync()` for compression support
+
+### ✅ Compression & Progress Tracking (2026-01-03)
+- **Selective Per-File Compression**: Only compresses text/code/logs, skips images/videos/archives
+- **Real-time Compression Stats**: Live display of compression ratio, bandwidth saved, files compressed
+- **Progress Bar Fix**: All operation types (Copy/Move/Sync/Mirror/BiDirectionalSync) now properly initialize progress tracker
+- **Completion Summaries**: Operation-specific summaries showing files transferred, deleted, skipped, and compression statistics
+- **Debug Log Export**: Export button with native save dialogs (Windows FileSavePicker, macOS UIDocumentPickerViewController)
+- **Cancel Button Fix**: Responsive cancel button during operations (fire-and-forget pattern for async operations)
+
+### ✅ Bug Fixes (2026-01-03)
+1. **Compression not working in Mirror/Sync/BiDirectionalSync**: Fixed strategy parameter not being passed to `CopyFileAsync()`
+2. **Progress bar stuck at 0%**: Fixed missing `SetTotalSize()` calls in Mirror/Sync/BiDirectionalSync operations
+3. **Compression stats double-counting**: Fixed by tracking compression bytes only on file completion, not on every progress update
+4. **Wrong compression ratio in summary**: Fixed inverted formula (now correctly shows uncompressed/compressed)
+5. **Network share detection on macOS**: Added heuristic fallback for /Volumes/ paths with slow write speeds
 
 ## Current Limitations
 
