@@ -490,6 +490,24 @@ public partial class MainViewModel : ObservableObject
         AverageSpeed = "0 MB/s";
         EstimatedTimeRemaining = "--:--";
 
+        // Reset strategy info
+        ShowStrategyInfo = false;
+        SourceStorageType = string.Empty;
+        SourceStorageSpeed = string.Empty;
+        DestStorageType = string.Empty;
+        DestStorageSpeed = string.Empty;
+        StrategyEmoji = string.Empty;
+        StrategyName = string.Empty;
+        StrategyReasoning = string.Empty;
+        CompressionEnabled = false;
+        CompressionInfo = string.Empty;
+
+        // Reset compression metrics
+        TotalCompressedBytes = 0;
+        TotalUncompressedBytes = 0;
+        OverallCompressionRatio = 1.0;
+        BandwidthSaved = "0 B";
+
         // Clear paths to force fresh selection
         SourcePath = string.Empty;
         DestinationPath = string.Empty;
@@ -527,7 +545,7 @@ public partial class MainViewModel : ObservableObject
         var window = Application.Current?.Windows?.FirstOrDefault();
         if (window?.Page != null)
         {
-            await window.Page.DisplayAlert("Copy Complete", summary, "OK");
+            await window.Page.DisplayAlertAsync("Copy Complete", summary, "OK");
         }
     }
 

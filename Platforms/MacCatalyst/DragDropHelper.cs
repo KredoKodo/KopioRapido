@@ -55,54 +55,53 @@ public static class DragDropHelper
         Console.WriteLine(msg);
         LogToFile(msg);
         
-        if (element.Handler?.PlatformView is UIView view)
-        {
-            var msg2 = $"[DragDropHelper] Configuring drag drop for {element.GetType().Name}";
-            logAction?.Invoke(msg2);
-            Console.WriteLine(msg2);
-            LogToFile(msg2);
-            
-            // Remove existing interactions to avoid duplicates
-            foreach (var interaction in view.Interactions)
-            {
-                if (interaction is UIDropInteraction)
-                {
-                    view.RemoveInteraction(interaction);
-                }
-            }
-
-            var dropInteraction = new UIDropInteraction(new DropInteractionDelegate(onDrop, logAction));
-            view.AddInteraction(dropInteraction);
-            view.UserInteractionEnabled = true; // Ensure interaction is enabled
-            
-            // Log view details
-            var viewDetails = $"[DragDropHelper] View details: Frame={view.Frame}, Hidden={view.Hidden}, Alpha={view.Alpha}, UserInteractionEnabled={view.UserInteractionEnabled}";
-            Console.WriteLine(viewDetails);
-            LogToFile(viewDetails);
-
-            // Check hierarchy
-            var parent = view.Superview;
-            int level = 0;
-            while (parent != null && level < 10)
-            {
-                var parentMsg = $"[DragDropHelper] Parent[{level}]: {parent.GetType().Name}, UserInteractionEnabled={parent.UserInteractionEnabled}, Hidden={parent.Hidden}";
-                Console.WriteLine(parentMsg);
-                LogToFile(parentMsg);
-                parent = parent.Superview;
-                level++;
-            }
-            
-            var successMsg = $"[DragDropHelper] Successfully added UIDropInteraction to {element.GetType().Name}";
-            Console.WriteLine(successMsg);
-            LogToFile(successMsg);
-        }
-        else
+        if (element?.Handler?.PlatformView is not UIView view)
         {
             var msg2 = $"[DragDropHelper] Failed to configure: PlatformView is null or not UIView for {element?.GetType().Name}";
             logAction?.Invoke(msg2);
             Console.WriteLine(msg2);
             LogToFile(msg2);
+            return;
         }
+        
+        var msg3 = $"[DragDropHelper] Configuring drag drop for {element.GetType().Name}";
+        logAction?.Invoke(msg3);
+        Console.WriteLine(msg3);
+        LogToFile(msg3);
+        
+        // Remove existing interactions to avoid duplicates
+        foreach (var interaction in view.Interactions)
+        {
+            if (interaction is UIDropInteraction)
+            {
+                view.RemoveInteraction(interaction);
+            }
+        }
+
+        var dropInteraction = new UIDropInteraction(new DropInteractionDelegate(onDrop, logAction));
+        view.AddInteraction(dropInteraction);
+        view.UserInteractionEnabled = true; // Ensure interaction is enabled
+        
+        // Log view details
+        var viewDetails = $"[DragDropHelper] View details: Frame={view.Frame}, Hidden={view.Hidden}, Alpha={view.Alpha}, UserInteractionEnabled={view.UserInteractionEnabled}";
+        Console.WriteLine(viewDetails);
+        LogToFile(viewDetails);
+
+        // Check hierarchy
+        var parent = view.Superview;
+        int level = 0;
+        while (parent != null && level < 10)
+        {
+            var parentMsg = $"[DragDropHelper] Parent[{level}]: {parent.GetType().Name}, UserInteractionEnabled={parent.UserInteractionEnabled}, Hidden={parent.Hidden}";
+            Console.WriteLine(parentMsg);
+            LogToFile(parentMsg);
+            parent = parent.Superview;
+            level++;
+        }
+        
+        var successMsg = $"[DragDropHelper] Successfully added UIDropInteraction to {element.GetType().Name}";
+        Console.WriteLine(successMsg);
+        LogToFile(successMsg);
     }
 
     class DropInteractionDelegate : UIDropInteractionDelegate
@@ -143,7 +142,13 @@ public static class DragDropHelper
             {
                 Log($"[DragDropHelper] Processing drag item, HasItemProvider: {item.ItemProvider != null}");
                 
-                item.ItemProvider.LoadItem("public.file-url", null, (NSObject? data, NSError? error) =>
+                if (item.ItemProvider == null)
+                {
+                    Log("[DragDropHelper] ItemProvider is null, skipping");
+                    continue;
+                }
+                
+                item.ItemProvider.LoadItem("public.file-url", null, (data, error) =>
                 {
                     if (error != null)
                     {

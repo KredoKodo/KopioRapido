@@ -206,7 +206,8 @@ public class StorageProfiler
             await using (var fs = new FileStream(testFile, FileMode.Open, FileAccess.Read, FileShare.None))
             {
                 fs.Seek(BenchmarkSizeMB * 512 * 1024, SeekOrigin.Begin);
-                await fs.ReadAsync(new byte[4096], cancellationToken);
+                var latencyBuffer = new byte[4096];
+                await fs.ReadExactlyAsync(latencyBuffer, cancellationToken);
             }
             latencySw.Stop();
             var latencyMs = latencySw.Elapsed.TotalMilliseconds;

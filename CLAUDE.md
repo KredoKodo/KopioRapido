@@ -14,6 +14,7 @@ KopioRapido is a desktop file copying application built with .NET 10 and .NET MA
 - **Delta Sync**: FastRsyncNet integration for efficient resume and incremental updates
 - **Smart Parallelization**: Automatic selection of sequential vs parallel mode based on storage type and file characteristics
 - **Native Platform Integration**: Direct platform APIs for drag-and-drop and folder selection
+- **Adaptive Window Sizing**: Golden ratio proportions (1.618:1) with intelligent screen-aware sizing and persistent window state
 
 ## Build Commands
 
@@ -161,6 +162,7 @@ Don't use `DropGestureRecognizer`. See Native Drag-and-Drop section above.
 
 - Logs: `%LocalApplicationData%/KopioRapido/Logs/{operationId}.log`
 - Resume state: `%LocalApplicationData%/KopioRapido/Operations/{operationId}.json`
+- Window preferences: `%LocalAppData%/KopioRapido/Preferences` (Windows), `~/Library/Preferences/com.kopiorapido.preferences.plist` (macOS)
 
 ## Recent Updates (2026-01-03)
 
@@ -172,7 +174,14 @@ Don't use `DropGestureRecognizer`. See Native Drag-and-Drop section above.
 - **Transparent Compression**: Brotli compression for network transfers
 - **Integrated with MainViewModel**: Rich logging with emojis and explanations
 
-See `INTELLIGENCE_ENGINE_INTEGRATION.md` and `COMPRESSION_INTEGRATION.md` for details.
+### ✅ Adaptive Window Sizing with Golden Ratio
+- **WindowSizer**: Calculates optimal size using golden ratio (1.618:1) and 70% of screen work area
+- **WindowPreferences**: Persists window size/position across sessions using .NET MAUI Preferences API
+- **Smart Validation**: Ensures saved position is on-screen, handles disconnected monitors gracefully
+- **Minimum Constraints**: 750×550 minimum size, fully resizable by user
+- **Screen Aware**: Adapts to 800×600 minimum screens up to 4K displays (clamped to 1600×1200 max)
+
+See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADAPTIVE_WINDOW_SIZING.md` for details.
 
 ## Current Limitations
 

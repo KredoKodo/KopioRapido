@@ -15,7 +15,9 @@ public class FolderPickerService : IFolderPickerService
         {
             try
             {
-                var documentPicker = new UIDocumentPickerViewController(new string[] { "public.folder" }, UIDocumentPickerMode.Open);
+                // Use modern API - create array of UTType for folders
+                var folderType = UniformTypeIdentifiers.UTTypes.Folder;
+                var documentPicker = new UIDocumentPickerViewController(new[] { folderType });
                 documentPicker.AllowsMultipleSelection = false;
                 documentPicker.ShouldShowFileExtensions = true;
 
@@ -38,8 +40,8 @@ public class FolderPickerService : IFolderPickerService
                 }
                 else
                 {
-                    // Fallback if Platform.GetCurrentUIViewController() returns null
-                    var window = UIApplication.SharedApplication.KeyWindow;
+                    // Fallback - get root view controller from window scene
+                    var window = GetKeyWindow();
                     var vc = window?.RootViewController;
                     while (vc?.PresentedViewController != null)
                     {
@@ -63,5 +65,25 @@ public class FolderPickerService : IFolderPickerService
         });
 
         return await tcs.Task;
+    }
+
+    private static UIWindow? GetKeyWindow()
+    {
+        // Modern way to get key window without deprecated KeyWindow property
+        var scenes = UIApplication.SharedApplication.ConnectedScenes;
+        foreach (var scene in scenes)
+        {
+            if (scene is UIWindowScene windowScene && windowScene.ActivationState == UISceneActivationState.ForegroundActive)
+            {
+                foreach (var window in windowScene.Windows)
+                {
+                    if (window.IsKeyWindow)
+                    {
+                        return window;
+                    }
+                }
+            }
+        }
+        return null;
     }
 }

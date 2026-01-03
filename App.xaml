@@ -16,6 +16,8 @@
             <converters:PercentToProgressConverter x:Key="PercentToProgressConverter"/>
             <converters:IsStringNotNullOrEmptyConverter x:Key="IsStringNotNullOrEmptyConverter"/>
             <converters:BytesToStringConverter x:Key="BytesToStringConverter"/>
+            <converters:CountToVisibilityConverter x:Key="CountToVisibilityConverter"/>
+            <converters:AllTrueConverter x:Key="AllTrueConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

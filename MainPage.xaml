@@ -56,7 +56,7 @@
                     <!-- File List or Empty State -->
                     <Grid Grid.Row="1">
                         <!-- Empty State -->
-                        <VerticalStackLayout IsVisible="{Binding SourceFiles.Count, Converter={StaticResource IsStringNotNullOrEmptyConverter}, ConverterParameter=inverse}"
+                        <VerticalStackLayout IsVisible="{Binding SourceFiles.Count, Converter={StaticResource CountToVisibilityConverter}, ConverterParameter=inverse}"
                                            VerticalOptions="Center"
                                            HorizontalOptions="Center"
                                            Padding="20">
@@ -64,7 +64,7 @@
                                    FontSize="48"
                                    HorizontalOptions="Center"
                                    Margin="0,0,0,10"/>
-                            <Label Text="Drag &amp; drop a folder here"
+                            <Label Text="Drag &amp; Drop Source Files/Folders Here"
                                    FontSize="16"
                                    HorizontalOptions="Center"
                                    TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"/>
@@ -81,7 +81,9 @@
                         </VerticalStackLayout>
 
                         <!-- File List -->
-                        <ScrollView>
+                        <ScrollView VerticalScrollBarVisibility="Default"
+                                    HorizontalScrollBarVisibility="Never"
+                                    IsVisible="{Binding SourceFiles.Count, Converter={StaticResource CountToVisibilityConverter}}">
                             <CollectionView ItemsSource="{Binding SourceFiles}">
                                 <CollectionView.ItemTemplate>
                                     <DataTemplate x:DataType="models:FileItem">
@@ -168,24 +170,13 @@
                     <!-- Source Path Footer -->
                     <Border Grid.Row="2"
                             BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#252525}"
-                            Padding="10,8">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <Label Grid.Column="0"
-                                   Text="{Binding SourcePath, StringFormat='📂 {0}'}"
-                                   FontSize="11"
-                                   LineBreakMode="TailTruncation"
-                                   VerticalOptions="Center"
-                                   TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
-                                   IsVisible="{Binding SourcePath, Converter={StaticResource IsStringNotNullOrEmptyConverter}}"/>
-                            <Button Grid.Column="1"
-                                    Text="📁 Browse..."
-                                    Command="{Binding SelectSourceCommand}"
-                                    FontSize="12"
-                                    Padding="12,6"
-                                    BackgroundColor="{AppThemeBinding Light=#0078D4, Dark=#1E3A8A}"
-                                    TextColor="White"
-                                    CornerRadius="4"/>
-                        </Grid>
+                            Padding="10,8"
+                            IsVisible="{Binding SourcePath, Converter={StaticResource IsStringNotNullOrEmptyConverter}}">
+                        <Label Text="{Binding SourcePath, StringFormat='📂 {0}'}"
+                               FontSize="11"
+                               LineBreakMode="TailTruncation"
+                               VerticalOptions="Center"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"/>
                     </Border>
                 </Grid>
             </Border>
@@ -230,8 +221,8 @@
 
                     <!-- File List or Empty State -->
                     <Grid Grid.Row="1">
-                        <!-- Empty State -->
-                        <VerticalStackLayout IsVisible="{Binding DestinationFiles.Count, Converter={StaticResource IsStringNotNullOrEmptyConverter}, ConverterParameter=inverse}"
+                        <!-- Empty State - No Destination Selected -->
+                        <VerticalStackLayout IsVisible="{Binding DestinationPath, Converter={StaticResource IsStringNotNullOrEmptyConverter}, ConverterParameter=inverse}"
                                            VerticalOptions="Center"
                                            HorizontalOptions="Center"
                                            Padding="20">
@@ -239,7 +230,7 @@
                                    FontSize="48"
                                    HorizontalOptions="Center"
                                    Margin="0,0,0,10"/>
-                            <Label Text="Select destination folder"
+                            <Label Text="Drag &amp; Drop Destination Location Here"
                                    FontSize="16"
                                    HorizontalOptions="Center"
                                    TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"/>
@@ -255,8 +246,42 @@
                                     TextColor="White"/>
                         </VerticalStackLayout>
 
+                        <!-- Empty State - Destination Set But No Files Copied Yet -->
+                        <VerticalStackLayout VerticalOptions="Center"
+                                           HorizontalOptions="Center"
+                                           Padding="20">
+                            <VerticalStackLayout.IsVisible>
+                                <MultiBinding Converter="{StaticResource AllTrueConverter}">
+                                    <Binding Path="DestinationPath" Converter="{StaticResource IsStringNotNullOrEmptyConverter}" />
+                                    <Binding Path="DestinationFiles.Count" Converter="{StaticResource CountToVisibilityConverter}" ConverterParameter="inverse" />
+                                </MultiBinding>
+                            </VerticalStackLayout.IsVisible>
+                            <Label Text="✓"
+                                   FontSize="48"
+                                   HorizontalOptions="Center"
+                                   TextColor="{AppThemeBinding Light=#10B981, Dark=#34D399}"
+                                   Margin="0,0,0,10"/>
+                            <Label Text="Destination Set"
+                                   FontSize="16"
+                                   FontAttributes="Bold"
+                                   HorizontalOptions="Center"
+                                   TextColor="{AppThemeBinding Light=#10B981, Dark=#34D399}"/>
+                            <Label Text="Drag &amp; Drop or Click Button to Change It"
+                                   FontSize="14"
+                                   HorizontalOptions="Center"
+                                   Margin="0,10,0,10"
+                                   TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"/>
+                            <Button Text="Change Destination Folder"
+                                    Command="{Binding SelectDestinationCommand}"
+                                    HorizontalOptions="Center"
+                                    BackgroundColor="{AppThemeBinding Light=#10B981, Dark=#34D399}"
+                                    TextColor="White"/>
+                        </VerticalStackLayout>
+
                         <!-- File List -->
-                        <ScrollView>
+                        <ScrollView VerticalScrollBarVisibility="Default"
+                                    HorizontalScrollBarVisibility="Never"
+                                    IsVisible="{Binding DestinationFiles.Count, Converter={StaticResource CountToVisibilityConverter}}">
                             <CollectionView ItemsSource="{Binding DestinationFiles}">
                                 <CollectionView.ItemTemplate>
                                     <DataTemplate x:DataType="models:FileItem">
@@ -294,24 +319,13 @@
                     <!-- Destination Path Footer -->
                     <Border Grid.Row="2"
                             BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#252525}"
-                            Padding="10,8">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <Label Grid.Column="0"
-                                   Text="{Binding DestinationPath, StringFormat='📂 {0}'}"
-                                   FontSize="11"
-                                   LineBreakMode="TailTruncation"
-                                   VerticalOptions="Center"
-                                   TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
-                                   IsVisible="{Binding DestinationPath, Converter={StaticResource IsStringNotNullOrEmptyConverter}}"/>
-                            <Button Grid.Column="1"
-                                    Text="📁 Browse..."
-                                    Command="{Binding SelectDestinationCommand}"
-                                    FontSize="12"
-                                    Padding="12,6"
-                                    BackgroundColor="{AppThemeBinding Light=#10B981, Dark=#065F46}"
-                                    TextColor="White"
-                                    CornerRadius="4"/>
-                        </Grid>
+                            Padding="10,8"
+                            IsVisible="{Binding DestinationPath, Converter={StaticResource IsStringNotNullOrEmptyConverter}}">
+                        <Label Text="{Binding DestinationPath, StringFormat='📂 {0}'}"
+                               FontSize="11"
+                               LineBreakMode="TailTruncation"
+                               VerticalOptions="Center"
+                               TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"/>
                     </Border>
                 </Grid>
             </Border>
@@ -645,7 +659,8 @@
             <Border.StrokeShape>
                 <RoundRectangle CornerRadius="4"/>
             </Border.StrokeShape>
-            <ScrollView>
+            <ScrollView VerticalScrollBarVisibility="Default"
+                        HorizontalScrollBarVisibility="Never">
                 <VerticalStackLayout>
                     <Label Text="Debug Log:" FontSize="10" FontAttributes="Bold" Margin="0,0,0,5"/>
                     <CollectionView ItemsSource="{Binding LogMessages}">
