@@ -59,20 +59,24 @@
                         <VerticalStackLayout IsVisible="{Binding SourceFiles.Count, Converter={StaticResource CountToVisibilityConverter}, ConverterParameter=inverse}"
                                            VerticalOptions="Center"
                                            HorizontalOptions="Center"
-                                           Padding="20">
+                                           Padding="20"
+                                           InputTransparent="True">
                             <Label Text="📁"
                                    FontSize="48"
                                    HorizontalOptions="Center"
-                                   Margin="0,0,0,10"/>
+                                   Margin="0,0,0,10"
+                                   InputTransparent="True"/>
                             <Label Text="Drag &amp; Drop Source Files/Folders Here"
                                    FontSize="16"
                                    HorizontalOptions="Center"
-                                   TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"/>
+                                   TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                                   InputTransparent="True"/>
                             <Label Text="or"
                                    FontSize="14"
                                    HorizontalOptions="Center"
                                    Margin="0,5,0,5"
-                                   TextColor="{AppThemeBinding Light=#888888, Dark=#AAAAAA}"/>
+                                   TextColor="{AppThemeBinding Light=#888888, Dark=#AAAAAA}"
+                                   InputTransparent="True"/>
                             <Button Text="Select Source Folder"
                                     Command="{Binding SelectSourceCommand}"
                                     HorizontalOptions="Center"
@@ -318,20 +322,24 @@
                         <VerticalStackLayout IsVisible="{Binding DestinationPath, Converter={StaticResource IsStringNotNullOrEmptyConverter}, ConverterParameter=inverse}"
                                            VerticalOptions="Center"
                                            HorizontalOptions="Center"
-                                           Padding="20">
+                                           Padding="20"
+                                           InputTransparent="True">
                             <Label Text="📋"
                                    FontSize="48"
                                    HorizontalOptions="Center"
-                                   Margin="0,0,0,10"/>
+                                   Margin="0,0,0,10"
+                                   InputTransparent="True"/>
                             <Label Text="Drag &amp; Drop Destination Location Here"
                                    FontSize="16"
                                    HorizontalOptions="Center"
-                                   TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"/>
+                                   TextColor="{AppThemeBinding Light=#666666, Dark=#999999}"
+                                   InputTransparent="True"/>
                             <Label Text="or"
                                    FontSize="14"
                                    HorizontalOptions="Center"
                                    Margin="0,5,0,5"
-                                   TextColor="{AppThemeBinding Light=#888888, Dark=#AAAAAA}"/>
+                                   TextColor="{AppThemeBinding Light=#888888, Dark=#AAAAAA}"
+                                   InputTransparent="True"/>
                             <Button Text="Select Destination Folder"
                                     Command="{Binding SelectDestinationCommand}"
                                     HorizontalOptions="Center"

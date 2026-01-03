@@ -54,7 +54,7 @@ public static class DragDropHelper
         var msg = $"[DragDropHelper] ConfigureDragDrop CALLED for {element?.GetType().Name ?? "NULL"}";
         Console.WriteLine(msg);
         LogToFile(msg);
-        
+
         if (element?.Handler?.PlatformView is not UIView view)
         {
             var msg2 = $"[DragDropHelper] Failed to configure: PlatformView is null or not UIView for {element?.GetType().Name}";
@@ -63,12 +63,12 @@ public static class DragDropHelper
             LogToFile(msg2);
             return;
         }
-        
+
         var msg3 = $"[DragDropHelper] Configuring drag drop for {element.GetType().Name}";
         logAction?.Invoke(msg3);
         Console.WriteLine(msg3);
         LogToFile(msg3);
-        
+
         // Remove existing interactions to avoid duplicates
         foreach (var interaction in view.Interactions)
         {
@@ -78,10 +78,15 @@ public static class DragDropHelper
             }
         }
 
-        var dropInteraction = new UIDropInteraction(new DropInteractionDelegate(onDrop, logAction));
+        var dropDelegate = new DropInteractionDelegate(onDrop, logAction);
+        var dropInteraction = new UIDropInteraction(dropDelegate);
         view.AddInteraction(dropInteraction);
         view.UserInteractionEnabled = true; // Ensure interaction is enabled
-        
+
+        // CRITICAL: Recursively enable drop on all child views
+        // This ensures child elements (labels, buttons, etc.) don't block drops
+        EnableDropOnChildViews(view, dropDelegate);
+
         // Log view details
         var viewDetails = $"[DragDropHelper] View details: Frame={view.Frame}, Hidden={view.Hidden}, Alpha={view.Alpha}, UserInteractionEnabled={view.UserInteractionEnabled}";
         Console.WriteLine(viewDetails);
@@ -98,10 +103,42 @@ public static class DragDropHelper
             parent = parent.Superview;
             level++;
         }
-        
-        var successMsg = $"[DragDropHelper] Successfully added UIDropInteraction to {element.GetType().Name}";
+
+        var successMsg = $"[DragDropHelper] Successfully added UIDropInteraction to {element.GetType().Name} and {CountChildViews(view)} children";
         Console.WriteLine(successMsg);
         LogToFile(successMsg);
+    }
+
+    private static void EnableDropOnChildViews(UIView view, DropInteractionDelegate dropDelegate)
+    {
+        foreach (var subview in view.Subviews)
+        {
+            // Remove existing drop interactions
+            foreach (var interaction in subview.Interactions)
+            {
+                if (interaction is UIDropInteraction)
+                {
+                    subview.RemoveInteraction(interaction);
+                }
+            }
+
+            // Add drop interaction to this child
+            var childDropInteraction = new UIDropInteraction(dropDelegate);
+            subview.AddInteraction(childDropInteraction);
+
+            // Recursively handle this child's children
+            EnableDropOnChildViews(subview, dropDelegate);
+        }
+    }
+
+    private static int CountChildViews(UIView view)
+    {
+        int count = view.Subviews.Length;
+        foreach (var subview in view.Subviews)
+        {
+            count += CountChildViews(subview);
+        }
+        return count;
     }
 
     class DropInteractionDelegate : UIDropInteractionDelegate
@@ -113,6 +150,7 @@ public static class DragDropHelper
         {
             _onDrop = onDrop;
             _logAction = logAction;
+            LogToFile($"[DragDropHelper] DropInteractionDelegate CREATED");
         }
 
         private void Log(string message)
@@ -124,71 +162,160 @@ public static class DragDropHelper
 
         public override bool CanHandleSession(UIDropInteraction interaction, IUIDropSession session)
         {
-            Log($"[DragDropHelper] CanHandleSession: {session.Items.Length} items");
-            // Return true if there are any items, we'll filter in PerformDrop
-            return session.Items.Length > 0;
+            Log($"[DragDropHelper] ✅ CanHandleSession CALLED: {session.Items.Length} items");
+
+            // Log item types
+            for (int i = 0; i < session.Items.Length; i++)
+            {
+                var item = session.Items[i];
+                Log($"[DragDropHelper]   Item[{i}]: HasItemProvider={item.ItemProvider != null}");
+            }
+
+            // Accept any session with items - we'll filter in PerformDrop
+            var canHandle = session.Items.Length > 0;
+            Log($"[DragDropHelper] CanHandleSession returning: {canHandle}");
+            return canHandle;
         }
 
         public override UIDropProposal SessionDidUpdate(UIDropInteraction interaction, IUIDropSession session)
         {
-            return new UIDropProposal(UIDropOperation.Copy);
+            Log($"[DragDropHelper] ✅ SessionDidUpdate CALLED");
+
+            // Always propose Copy operation for drops
+            var proposal = new UIDropProposal(UIDropOperation.Copy);
+            Log($"[DragDropHelper] SessionDidUpdate returning: Copy operation");
+            return proposal;
+        }
+
+        public override void SessionDidEnd(UIDropInteraction interaction, IUIDropSession session)
+        {
+            Log($"[DragDropHelper] ✅ SessionDidEnd CALLED");
+        }
+
+        public override void SessionDidExit(UIDropInteraction interaction, IUIDropSession session)
+        {
+            Log($"[DragDropHelper] SessionDidExit CALLED");
+        }
+
+        public override void SessionDidEnter(UIDropInteraction interaction, IUIDropSession session)
+        {
+            Log($"[DragDropHelper] SessionDidEnter CALLED");
         }
 
         public override void PerformDrop(UIDropInteraction interaction, IUIDropSession session)
         {
-            Log("[DragDropHelper] PerformDrop called");
-            
+            Log($"[DragDropHelper] ✅✅✅ PerformDrop CALLED with {session.Items.Length} items");
+
             foreach (var item in session.Items)
             {
                 Log($"[DragDropHelper] Processing drag item, HasItemProvider: {item.ItemProvider != null}");
-                
+
                 if (item.ItemProvider == null)
                 {
-                    Log("[DragDropHelper] ItemProvider is null, skipping");
+                    Log("[DragDropHelper] ❌ ItemProvider is null, skipping");
                     continue;
                 }
-                
-                item.ItemProvider.LoadItem("public.file-url", null, (data, error) =>
-                {
-                    if (error != null)
-                    {
-                        Log($"[DragDropHelper] Error loading item: {error.LocalizedDescription}");
-                        return;
-                    }
 
-                    if (data is NSUrl url && url.IsFileUrl)
+                // Try multiple UTIs for maximum compatibility
+                var utis = new[] { "public.file-url", "public.url", "public.data" };
+                bool itemHandled = false;
+
+                foreach (var uti in utis)
+                {
+                    if (itemHandled) break;
+
+                    Log($"[DragDropHelper] Trying LoadItem with '{uti}'...");
+                    item.ItemProvider.LoadItem(uti, null, (data, error) =>
                     {
-                        Log($"[DragDropHelper] Got file URL: {url.Path}");
-                        
-                        // Start accessing security-scoped resource
-                        if (url.StartAccessingSecurityScopedResource())
+                        if (error != null)
                         {
-                            try
+                            Log($"[DragDropHelper] Error loading with '{uti}': {error.LocalizedDescription}");
+                            return;
+                        }
+
+                        if (data == null)
+                        {
+                            Log($"[DragDropHelper] No data returned for '{uti}'");
+                            return;
+                        }
+
+                        Log($"[DragDropHelper] Got data for '{uti}': Type={data.GetType().Name}");
+
+                        if (data is NSUrl url)
+                        {
+                            Log($"[DragDropHelper] Data is NSUrl: {url}, IsFileUrl={url.IsFileUrl}, Path={url.Path}");
+
+                            string? path = null;
+
+                            if (url.IsFileUrl)
                             {
-                                var path = url.Path;
-                                if (!string.IsNullOrEmpty(path))
+                                path = url.Path;
+                            }
+                            else if (!string.IsNullOrEmpty(url.AbsoluteString))
+                            {
+                                // Try to extract file path from URL string
+                                var urlString = url.AbsoluteString;
+                                if (urlString.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
                                 {
+                                    path = Uri.UnescapeDataString(urlString.Substring(7));
+                                }
+                            }
+
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                Log($"[DragDropHelper] ✅ Extracted path: {path}");
+                                itemHandled = true;
+
+                                // Start accessing security-scoped resource
+                                if (url.StartAccessingSecurityScopedResource())
+                                {
+                                    try
+                                    {
+                                        MainThread.BeginInvokeOnMainThread(async () =>
+                                        {
+                                            try
+                                            {
+                                                await _onDrop(path);
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                Log($"[DragDropHelper] Exception in _onDrop: {ex.Message}");
+                                            }
+                                        });
+                                    }
+                                    finally
+                                    {
+                                        url.StopAccessingSecurityScopedResource();
+                                    }
+                                }
+                                else
+                                {
+                                    Log("[DragDropHelper] Failed to access security-scoped resource, trying anyway...");
+                                    // Try anyway - might work for non-sandboxed locations
                                     MainThread.BeginInvokeOnMainThread(async () =>
                                     {
-                                        await _onDrop(path);
+                                        try
+                                        {
+                                            await _onDrop(path);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Log($"[DragDropHelper] Exception in _onDrop: {ex.Message}");
+                                        }
                                     });
                                 }
                             }
-                            finally
+                            else
                             {
-                                url.StopAccessingSecurityScopedResource();
+                                Log($"[DragDropHelper] Could not extract path from URL");
                             }
                         }
                         else
                         {
-                            Log("[DragDropHelper] Failed to access security-scoped resource");
+                            Log($"[DragDropHelper] Data is not NSUrl: {data.GetType().Name}");
                         }
-                    }
-                    else
-                    {
-                        Log($"[DragDropHelper] Data is not NSUrl or not file URL: {data?.GetType().Name}");
-                    }
-                });
+                    });
+                }
                 
                 break; // Only handle first item
             }
