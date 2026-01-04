@@ -1,5 +1,7 @@
 using System.CommandLine;
 using KopioRapido.Services;
+using KopioRapido.Models;
+using KopioRapido.CLI.Output;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace KopioRapido.CLI.Commands;
@@ -22,9 +24,11 @@ public class ResumeCommand : BaseCommand
             // Get global options
             var verbose = result.GetValue(globalOptions.Verbose);
             var json = result.GetValue(globalOptions.Json);
+            var plain = result.GetValue(globalOptions.Plain);
+            var color = result.GetValue(globalOptions.Color);
 
             var command = new ResumeCommand(services);
-            return command.ExecuteAsync(operationId, verbose, json).GetAwaiter().GetResult();
+            return command.ExecuteAsync(operationId, verbose, json, plain, color).GetAwaiter().GetResult();
         });
 
         return cmd;
@@ -32,8 +36,12 @@ public class ResumeCommand : BaseCommand
 
     private ResumeCommand(IServiceProvider services) : base(services) { }
 
-    private async Task<int> ExecuteAsync(string operationId, bool verbose, bool json)
+    private async Task<int> ExecuteAsync(string operationId, bool verbose, bool json, bool plain, bool color)
     {
+        var outputFormatter = json ?
+            (IOutputFormatter)new JsonOutputFormatter() :
+            new ConsoleOutputFormatter(verbose, plain, color);
+
         try
         {
             var resumeService = Services.GetRequiredService<IResumeService>();
@@ -41,53 +49,50 @@ public class ResumeCommand : BaseCommand
             
             if (operation == null)
             {
-                if (json)
-                {
-                    Console.WriteLine($"{{\"error\": \"Operation {operationId} not found\"}}");
-                }
-                else
-                {
-                    Console.WriteLine($"ERROR: Operation {operationId} not found");
-                }
+                outputFormatter.Error($"Operation {operationId} not found");
                 return 1;
             }
 
-            if (json)
+            if (operation.Status == CopyStatus.Completed)
             {
-                var jsonOutput = System.Text.Json.JsonSerializer.Serialize(new
-                {
-                    operationType = operation.OperationType.ToString(),
-                    sourcePath = operation.SourcePath,
-                    destinationPath = operation.DestinationPath,
-                    filesTransferred = operation.FilesTransferred,
-                    totalFiles = operation.TotalFiles,
-                    status = "Not yet implemented"
-                }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-                Console.WriteLine(jsonOutput);
+                outputFormatter.Warning($"Operation {operationId} is already completed");
+                outputFormatter.ShowResult(operation);
+                return 0;
             }
-            else
+
+            if (!json)
             {
-                Console.WriteLine($"Resuming {operation.OperationType} operation:");
-                Console.WriteLine($"  Source: {operation.SourcePath}");
-                Console.WriteLine($"  Destination: {operation.DestinationPath}");
-                Console.WriteLine($"  Progress: {operation.FilesTransferred}/{operation.TotalFiles} files");
+                outputFormatter.Info($"Resuming {operation.OperationType} operation:");
+                outputFormatter.Info($"  Source: {operation.SourcePath}");
+                outputFormatter.Info($"  Destination: {operation.DestinationPath}");
+                outputFormatter.Info($"  Progress: {operation.FilesTransferred}/{operation.TotalFiles} files");
+                outputFormatter.Info($"  Status: {operation.Status}");
                 Console.WriteLine();
-                Console.WriteLine("Resume functionality will be completed in next iteration.");
-                Console.WriteLine("Core resume infrastructure is in place.");
             }
-            
-            return 0;
+
+            // Execute resume with progress reporting
+            var progress = new Progress<FileTransferProgress>(p =>
+                outputFormatter.ShowProgress(p));
+
+            var resumedOperation = await FileOpService.ResumeCopyAsync(
+                operationId,
+                progress,
+                CancellationToken.None);
+
+            outputFormatter.ShowResult(resumedOperation);
+
+            return resumedOperation.Status == CopyStatus.Completed ? 0 : 1;
+        }
+        catch (OperationCanceledException)
+        {
+            outputFormatter.Warning("Operation cancelled by user");
+            return 130; // Standard cancellation exit code
         }
         catch (Exception ex)
         {
-            if (json)
-            {
-                Console.WriteLine($"{{\"error\": \"{ex.Message.Replace("\"", "\\\"")}\"}}");
-            }
-            else
-            {
-                Console.WriteLine($"ERROR: {ex.Message}");
-            }
+            outputFormatter.Error($"Error: {ex.Message}");
+            if (verbose)
+                outputFormatter.Error(ex.StackTrace ?? "");
             return 1;
         }
     }

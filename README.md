@@ -113,10 +113,12 @@ kopiorapido mirror /source /destination
 # Two-way sync (newer timestamp wins)
 kopiorapido bidirectional-sync /path1 /path2
 
-# List resumable operations
+# List resumable operations (with details)
 kopiorapido list
+kopiorapido --json list  # JSON output for scripting
 
 # Resume interrupted operation
+# Get operation ID from 'kopiorapido list' output
 kopiorapido resume <operation-id>
 
 # Show version

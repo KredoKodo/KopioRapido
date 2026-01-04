@@ -280,7 +280,7 @@ See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADA
 - **Comprehensive Logging**: Detailed emoji-based logging for debugging drop operations
 - **Manual Fallback**: Folder selection buttons remain fully functional
 
-### ✅ CLI Implementation (2026-01-03)
+### ✅ CLI Implementation (2026-01-03/04)
 - **Complete CLI Interface**: All 7 commands fully functional (copy, move, sync, mirror, bidirectional-sync, resume, list)
 - **System.CommandLine 2.0.1**: Modern command-line parsing with automatic help generation
 - **Rich Output**: Spectre.Console for interactive terminals, JSON for scripting (--json flag)
@@ -290,7 +290,7 @@ See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADA
 - **Global Options**: --verbose, --json, --plain, --color, --state-dir, --log-level (must appear before command)
 - **Command Options**: All operation commands support --analyze, --strategy, --max-concurrent, --buffer-size, --no-compression, --no-delta-sync
 - **Tested & Working**: File operations execute correctly, progress reporting works, JSON output functional
-- **Resume/List**: Basic resume state viewing and operation listing with JSON support
+- **Resume Functionality**: Fully implemented - can resume interrupted operations with progress continuation
 
 ## CLI Usage Examples
 
@@ -321,7 +321,7 @@ kopiorapido --verbose copy /source /dest --strategy aggressive --analyze
 # Management
 kopiorapido list                    # List resumable operations
 kopiorapido --json list             # List operations as JSON
-kopiorapido resume <operation-id>   # Resume operation (shows state, execution pending)
+kopiorapido resume <operation-id>   # Resume interrupted operation
 
 # Help
 kopiorapido --help                  # Show all commands
@@ -331,5 +331,5 @@ kopiorapido --version               # Show version
 
 ## Current Limitations
 
-- Resume execution: Resume command shows state but doesn't execute resume yet (Core API ready, just needs wiring)
 - Shell integration: Context menu handlers not implemented
+- Tab completion: Shell completion scripts not yet generated
