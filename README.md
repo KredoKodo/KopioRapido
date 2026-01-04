@@ -127,16 +127,54 @@ kopiorapido --help
 kopiorapido copy --help
 ```
 
-#### Command Options
+#### Global Options
 
-Each operation command supports:
-- Analysis (dry-run) mode
-- Custom transfer strategies
-- Compression control
-- Delta sync control
-- Concurrency settings
+Global options must appear **before** the command:
 
-*Note: Advanced options will be documented in CLI_USAGE.md*
+```bash
+# JSON output (for scripting)
+kopiorapido --json copy /source /destination
+
+# Verbose logging
+kopiorapido --verbose copy /source /destination
+
+# Plain text output (no colors)
+kopiorapido --plain copy /source /destination
+
+# Force colored output
+kopiorapido --color copy /source /destination
+
+# Custom state directory
+kopiorapido --state-dir /custom/path copy /source /destination
+```
+
+#### Command-Specific Options
+
+All operation commands (copy, move, sync, mirror, bidirectional-sync) support:
+
+```bash
+# Analyze without copying (dry-run)
+kopiorapido copy /source /destination --analyze
+
+# Override transfer strategy
+kopiorapido copy /source /destination --strategy aggressive
+# Strategies: sequential | conservative | moderate | aggressive
+
+# Custom concurrency
+kopiorapido copy /source /destination --max-concurrent 8
+
+# Custom buffer size (in KB)
+kopiorapido copy /source /destination --buffer-size 2048
+
+# Disable compression
+kopiorapido copy /source /destination --no-compression
+
+# Disable delta sync
+kopiorapido copy /source /destination --no-delta-sync
+
+# Combine multiple options
+kopiorapido --verbose copy /source /dest --strategy aggressive --analyze
+```
 
 ### Graphical Interface
 

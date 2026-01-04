@@ -281,28 +281,47 @@ See `INTELLIGENCE_ENGINE_INTEGRATION.md`, `COMPRESSION_INTEGRATION.md`, and `ADA
 - **Manual Fallback**: Folder selection buttons remain fully functional
 
 ### ✅ CLI Implementation (2026-01-03)
-- **Complete CLI Interface**: All 7 commands implemented (copy, move, sync, mirror, bidirectional-sync, resume, list)
+- **Complete CLI Interface**: All 7 commands fully functional (copy, move, sync, mirror, bidirectional-sync, resume, list)
 - **System.CommandLine 2.0.1**: Modern command-line parsing with automatic help generation
-- **Rich Output**: Spectre.Console for interactive terminals, JSON for scripting
+- **Rich Output**: Spectre.Console for interactive terminals, JSON for scripting (--json flag)
 - **TTY Detection**: Auto-detects piped output, can be overridden with --plain/--color flags
 - **Shared Core Logic**: CLI and GUI share identical business logic via KopioRapido.Core
-- **Service Configuration**: Full DI setup with all core services available to CLI
-- **Commands Work**: Help system functional, all commands parse correctly
-- **Resume/List**: Basic resume state viewing and operation listing implemented
+- **Full DI Setup**: All core services (intelligence engine, compression, delta sync) available
+- **Global Options**: --verbose, --json, --plain, --color, --state-dir, --log-level (must appear before command)
+- **Command Options**: All operation commands support --analyze, --strategy, --max-concurrent, --buffer-size, --no-compression, --no-delta-sync
+- **Tested & Working**: File operations execute correctly, progress reporting works, JSON output functional
+- **Resume/List**: Basic resume state viewing and operation listing with JSON support
 
 ## CLI Usage Examples
 
 ```bash
-# Basic operations
+# Basic operations (all fully functional)
 kopiorapido copy /source /dest
 kopiorapido move /source /dest
 kopiorapido sync /source /dest
 kopiorapido mirror /source /dest
 kopiorapido bidirectional-sync /path1 /path2
 
+# Global options (must come before command)
+kopiorapido --json copy /source /dest
+kopiorapido --verbose copy /source /dest
+kopiorapido --plain copy /source /dest
+
+# Command-specific options
+kopiorapido copy /source /dest --analyze                  # Dry-run
+kopiorapido copy /source /dest --strategy aggressive      # Override strategy
+kopiorapido copy /source /dest --max-concurrent 8         # Custom concurrency
+kopiorapido copy /source /dest --buffer-size 2048         # Custom buffer (KB)
+kopiorapido copy /source /dest --no-compression           # Disable compression
+kopiorapido copy /source /dest --no-delta-sync            # Disable delta sync
+
+# Combine options
+kopiorapido --verbose copy /source /dest --strategy aggressive --analyze
+
 # Management
 kopiorapido list                    # List resumable operations
-kopiorapido resume <operation-id>   # Resume operation
+kopiorapido --json list             # List operations as JSON
+kopiorapido resume <operation-id>   # Resume operation (shows state, execution pending)
 
 # Help
 kopiorapido --help                  # Show all commands
@@ -312,6 +331,5 @@ kopiorapido --version               # Show version
 
 ## Current Limitations
 
-- CLI advanced options: --analyze, --strategy, --max-concurrent not yet wired (framework ready)
+- Resume execution: Resume command shows state but doesn't execute resume yet (Core API ready, just needs wiring)
 - Shell integration: Context menu handlers not implemented
-- Resume execution: Resume command shows state but doesn't execute (Core API ready)
