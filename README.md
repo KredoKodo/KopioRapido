@@ -211,6 +211,8 @@ See [PLATFORM_FOLDER_PICKERS.md](PLATFORM_FOLDER_PICKERS.md) for details.
 
 All operations are automatically saved to disk:
 - **State files**: Stored in `%LocalApplicationData%/KopioRapido/Operations/`
+- **Logs**: Stored in `%LocalApplicationData%/KopioRapido/Logs/`
+- **Custom location**: Use `--state-dir /custom/path` flag (CLI only)
 - **Auto-detection**: Incomplete operations detected on startup
 - **Manual resume**: Resume any saved operation
 
@@ -239,12 +241,12 @@ KopioRapido/
 ### Planned Features
 
 - [ ] **Shell Integration** - Right-click context menu ("Copy with KopioRapido")
-- [ ] **Custom State Directory** - Full support for `--state-dir` flag (currently warns but uses default)
 - [ ] **Tab Completion** - Shell completion scripts for bash/zsh/PowerShell
 
 ### Completed Features
 
 - [x] **Command-Line Interface** - Full CLI with 7 commands, JSON output, rich formatting
+- [x] **Custom State Directory** - Full support for `--state-dir` flag (logs + operations)
 - [x] **Drag-and-Drop Support** - Drag folders from Finder/Explorer into source/destination panes
 - [x] **Multiple Operation Types** - Copy, Move, Sync, Mirror, BiDirectionalSync
 - [x] **Intelligence Engine** - Automatic storage profiling and strategy selection

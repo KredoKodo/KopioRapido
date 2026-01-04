@@ -10,13 +10,14 @@ public class LoggingService : ILoggingService
     private readonly ConcurrentDictionary<string, List<OperationLog>> _memoryLogs;
     private readonly SemaphoreSlim _fileLock;
 
-    public LoggingService()
+    public LoggingService(string? customBaseDirectory = null)
     {
-        _logDirectory = Path.Combine(
+        var baseDir = customBaseDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "KopioRapido",
-            "Logs"
+            "KopioRapido"
         );
+        
+        _logDirectory = Path.Combine(baseDir, "Logs");
         Directory.CreateDirectory(_logDirectory);
 
         _memoryLogs = new ConcurrentDictionary<string, List<OperationLog>>();

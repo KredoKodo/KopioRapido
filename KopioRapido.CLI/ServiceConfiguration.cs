@@ -7,7 +7,7 @@ namespace KopioRapido.CLI;
 
 public static class ServiceConfiguration
 {
-    public static IServiceProvider ConfigureServices()
+    public static IServiceProvider ConfigureServices(string? customStateDirectory = null)
     {
         var services = new ServiceCollection();
 
@@ -19,9 +19,9 @@ public static class ServiceConfiguration
         });
 
         // Core Services (from KopioRapido.Core)
-        services.AddSingleton<ILoggingService, LoggingService>();
+        services.AddSingleton<ILoggingService>(sp => new LoggingService(customStateDirectory));
         services.AddSingleton<IProgressTrackerService, ProgressTrackerService>();
-        services.AddSingleton<IResumeService, ResumeService>();
+        services.AddSingleton<IResumeService>(sp => new ResumeService(customStateDirectory));
         services.AddSingleton<IPerformanceMonitorService, PerformanceMonitorService>();
         services.AddSingleton<IQuickScanService, QuickScanService>();
 

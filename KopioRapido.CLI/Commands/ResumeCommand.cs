@@ -26,9 +26,10 @@ public class ResumeCommand : BaseCommand
             var json = result.GetValue(globalOptions.Json);
             var plain = result.GetValue(globalOptions.Plain);
             var color = result.GetValue(globalOptions.Color);
+            var stateDir = result.GetValue(globalOptions.StateDir);
 
             var command = new ResumeCommand(services);
-            return command.ExecuteAsync(operationId, verbose, json, plain, color).GetAwaiter().GetResult();
+            return command.ExecuteAsync(operationId, verbose, json, plain, color, stateDir).GetAwaiter().GetResult();
         });
 
         return cmd;
@@ -36,8 +37,11 @@ public class ResumeCommand : BaseCommand
 
     private ResumeCommand(IServiceProvider services) : base(services) { }
 
-    private async Task<int> ExecuteAsync(string operationId, bool verbose, bool json, bool plain, bool color)
+    private async Task<int> ExecuteAsync(string operationId, bool verbose, bool json, bool plain, bool color, string? stateDir)
     {
+        // Configure custom state directory if specified
+        ConfigureStateDirectory(stateDir);
+        
         var outputFormatter = json ?
             (IOutputFormatter)new JsonOutputFormatter() :
             new ConsoleOutputFormatter(verbose, plain, color);

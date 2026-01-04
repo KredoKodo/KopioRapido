@@ -8,13 +8,14 @@ public class ResumeService : IResumeService
     private readonly string _stateDirectory;
     private readonly SemaphoreSlim _fileLock;
 
-    public ResumeService()
+    public ResumeService(string? customBaseDirectory = null)
     {
-        _stateDirectory = Path.Combine(
+        var baseDir = customBaseDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "KopioRapido",
-            "Operations"
+            "KopioRapido"
         );
+        
+        _stateDirectory = Path.Combine(baseDir, "Operations");
         Directory.CreateDirectory(_stateDirectory);
         _fileLock = new SemaphoreSlim(1, 1);
     }

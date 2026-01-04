@@ -14,9 +14,10 @@ public class ListCommand : BaseCommand
         {
             // Get global options
             var json = result.GetValue(globalOptions.Json);
+            var stateDir = result.GetValue(globalOptions.StateDir);
             
             var command = new ListCommand(services);
-            return command.ExecuteAsync(json).GetAwaiter().GetResult();
+            return command.ExecuteAsync(json, stateDir).GetAwaiter().GetResult();
         });
 
         return cmd;
@@ -24,32 +25,18 @@ public class ListCommand : BaseCommand
 
     private ListCommand(IServiceProvider services) : base(services) { }
 
-    private async Task<int> ExecuteAsync(bool json)
+    private async Task<int> ExecuteAsync(bool json, string? stateDir)
     {
         try
         {
+            // Configure custom state directory if specified
+            ConfigureStateDirectory(stateDir);
+            
             var resumeService = Services.GetRequiredService<IResumeService>();
+            var resumableOps = await resumeService.GetResumableOperationsAsync();
+            var operations = resumableOps.ToList();
             
-            // Get app data directory
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var operationsDir = Path.Combine(appData, "KopioRapido", "Operations");
-            
-            if (!Directory.Exists(operationsDir))
-            {
-                if (json)
-                {
-                    Console.WriteLine("{\"operations\": []}");
-                }
-                else
-                {
-                    Console.WriteLine("No operations found.");
-                }
-                return 0;
-            }
-
-            var stateFiles = Directory.GetFiles(operationsDir, "*.json");
-            
-            if (stateFiles.Length == 0)
+            if (operations.Count == 0)
             {
                 if (json)
                 {
@@ -62,53 +49,39 @@ public class ListCommand : BaseCommand
                 return 0;
             }
 
-            var operations = new List<object>();
-            
-            foreach (var file in stateFiles)
-            {
-                var operationId = Path.GetFileNameWithoutExtension(file);
-                var operation = await resumeService.LoadOperationStateAsync(operationId);
-                
-                if (operation != null)
-                {
-                    if (json)
-                    {
-                        operations.Add(new
-                        {
-                            id = operation.Id,
-                            operationType = operation.OperationType.ToString(),
-                            status = operation.Status.ToString(),
-                            sourcePath = operation.SourcePath,
-                            destinationPath = operation.DestinationPath,
-                            filesTransferred = operation.FilesTransferred,
-                            totalFiles = operation.TotalFiles,
-                            startTime = operation.StartTime
-                        });
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Operation ID: {operation.Id}");
-                        Console.WriteLine($"  Type: {operation.OperationType}");
-                        Console.WriteLine($"  Status: {operation.Status}");
-                        Console.WriteLine($"  Source: {operation.SourcePath}");
-                        Console.WriteLine($"  Destination: {operation.DestinationPath}");
-                        Console.WriteLine($"  Progress: {operation.FilesTransferred}/{operation.TotalFiles} files");
-                        Console.WriteLine($"  Started: {operation.StartTime:g}");
-                        Console.WriteLine();
-                    }
-                }
-            }
-
             if (json)
             {
+                var jsonOperations = operations.Select(operation => new
+                {
+                    id = operation.Id,
+                    operationType = operation.OperationType.ToString(),
+                    status = operation.Status.ToString(),
+                    sourcePath = operation.SourcePath,
+                    destinationPath = operation.DestinationPath,
+                    filesTransferred = operation.FilesTransferred,
+                    totalFiles = operation.TotalFiles,
+                    startTime = operation.StartTime
+                }).ToList();
+                
                 var jsonOutput = System.Text.Json.JsonSerializer.Serialize(
-                    new { operations },
+                    new { operations = jsonOperations },
                     new System.Text.Json.JsonSerializerOptions { WriteIndented = true }
                 );
                 Console.WriteLine(jsonOutput);
             }
             else
             {
+                foreach (var operation in operations)
+                {
+                    Console.WriteLine($"Operation ID: {operation.Id}");
+                    Console.WriteLine($"  Type: {operation.OperationType}");
+                    Console.WriteLine($"  Status: {operation.Status}");
+                    Console.WriteLine($"  Source: {operation.SourcePath}");
+                    Console.WriteLine($"  Destination: {operation.DestinationPath}");
+                    Console.WriteLine($"  Progress: {operation.FilesTransferred}/{operation.TotalFiles} files");
+                    Console.WriteLine($"  Started: {operation.StartTime:g}");
+                    Console.WriteLine();
+                }
                 Console.WriteLine($"Total: {operations.Count} resumable operation(s)");
             }
 

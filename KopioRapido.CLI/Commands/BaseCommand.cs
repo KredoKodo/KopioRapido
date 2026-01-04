@@ -8,13 +8,31 @@ namespace KopioRapido.CLI.Commands;
 
 public abstract class BaseCommand
 {
-    protected IServiceProvider Services { get; }
-    protected IFileOperationService FileOpService { get; }
+    private readonly IServiceProvider _defaultServices;
+    protected IServiceProvider Services { get; private set; }
+    protected IFileOperationService FileOpService { get; private set; }
 
     protected BaseCommand(IServiceProvider services)
     {
+        _defaultServices = services;
         Services = services;
         FileOpService = services.GetRequiredService<IFileOperationService>();
+    }
+    
+    protected void ConfigureStateDirectory(string? stateDir)
+    {
+        if (!string.IsNullOrEmpty(stateDir))
+        {
+            // Validate the directory exists or can be created
+            if (!Directory.Exists(stateDir))
+            {
+                Directory.CreateDirectory(stateDir);
+            }
+            
+            // Create new service provider with custom state directory
+            Services = ServiceConfiguration.ConfigureServices(stateDir);
+            FileOpService = Services.GetRequiredService<IFileOperationService>();
+        }
     }
 
     protected async Task<int> ExecuteOperationAsync(
@@ -34,17 +52,8 @@ public abstract class BaseCommand
         string? stateDir,
         CancellationToken cancellationToken)
     {
-        // Override state directory if specified
-        if (!string.IsNullOrEmpty(stateDir))
-        {
-            // TODO: Set custom state directory on services
-            // This would require updating ILoggingService and IResumeService
-            // to accept a custom base path. For now, log a warning.
-            if (!json && !plain)
-            {
-                Console.WriteLine($"WARNING: --state-dir is not fully implemented yet. Using default location.");
-            }
-        }
+        // Configure custom state directory if specified
+        ConfigureStateDirectory(stateDir);
 
         var outputFormatter = json ?
             (IOutputFormatter)new JsonOutputFormatter() :

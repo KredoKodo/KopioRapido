@@ -204,10 +204,21 @@ Don't use `DropGestureRecognizer`. See Native Drag-and-Drop section above.
 - Logs: `%LocalApplicationData%/KopioRapido/Logs/{operationId}.log`
 - Resume state: `%LocalApplicationData%/KopioRapido/Operations/{operationId}.json`
 - Window preferences: `%LocalAppData%/KopioRapido/Preferences` (Windows), `~/Library/Preferences/com.kopiorapido.preferences.plist` (macOS)
+- Custom location: CLI supports `--state-dir /custom/path` to override default locations for logs and operations
 
-## Recent Updates (2026-01-03)
+## Recent Updates
 
-### ✅ Intelligence Engine Fully Integrated
+### ✅ Custom State Directory Support (2026-01-04)
+- **Full --state-dir Implementation**: CLI now supports custom state directories for logs and operation state
+- **Service Layer Updates**: LoggingService and ResumeService accept optional custom base directory in constructor
+- **Dynamic Service Configuration**: ServiceConfiguration.ConfigureServices() accepts customStateDirectory parameter
+- **BaseCommand Integration**: All CLI commands (copy, move, sync, mirror, bidirectional-sync, resume, list) use custom directory when specified
+- **Automatic Directory Creation**: Custom directories are automatically created if they don't exist
+- **File Organization**: Custom directory maintains same structure (Logs/ and Operations/ subdirectories)
+- **Backward Compatible**: Default behavior unchanged when --state-dir is not specified
+- **Tested & Working**: Successfully creates, writes, and reads from custom state directories
+
+### ✅ Intelligence Engine Fully Integrated (2026-01-03)
 - **TransferIntelligenceEngine**: Analyzes storage + files, selects optimal strategy
 - **StorageProfiler**: Benchmarks devices (SSD/HDD/Network/USB detection)
 - **FileAnalyzer**: Categorizes files by size and compressibility
@@ -306,6 +317,7 @@ kopiorapido bidirectional-sync /path1 /path2
 kopiorapido --json copy /source /dest
 kopiorapido --verbose copy /source /dest
 kopiorapido --plain copy /source /dest
+kopiorapido --state-dir /custom/path copy /source /dest
 
 # Command-specific options
 kopiorapido copy /source /dest --analyze                  # Dry-run
@@ -317,11 +329,14 @@ kopiorapido copy /source /dest --no-delta-sync            # Disable delta sync
 
 # Combine options
 kopiorapido --verbose copy /source /dest --strategy aggressive --analyze
+kopiorapido --state-dir /tmp/backup-state --json copy /source /dest
 
 # Management
-kopiorapido list                    # List resumable operations
-kopiorapido --json list             # List operations as JSON
-kopiorapido resume <operation-id>   # Resume interrupted operation
+kopiorapido list                                # List resumable operations
+kopiorapido --json list                         # List operations as JSON
+kopiorapido --state-dir /custom/path list       # List from custom state directory
+kopiorapido resume <operation-id>               # Resume interrupted operation
+kopiorapido --state-dir /custom/path resume <operation-id>  # Resume from custom location
 
 # Help
 kopiorapido --help                  # Show all commands
