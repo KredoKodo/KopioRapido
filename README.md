@@ -218,29 +218,33 @@ All operations are automatically saved to disk:
 
 ```
 KopioRapido/
-├── Core/                      # Business logic and file copy engine
-├── Services/                  # Service layer (operations, logging, progress, folder picker)
-├── Models/                    # Data models
-├── ViewModels/                # MVVM ViewModels
-├── Views/                     # MAUI pages (currently MainPage in root)
-├── Converters/                # XAML value converters
-├── Platforms/                 # Platform-specific implementations
-│   ├── Windows/              # Windows folder picker
-│   ├── MacCatalyst/          # macOS folder picker
-│   ├── iOS/                  # iOS folder picker
-│   └── Android/              # Android folder picker
-└── CLI/                      # Command-line interface (future)
+├── KopioRapido.Core/          # Shared business logic
+│   ├── Core/                  # File copy engine, intelligence engine, storage profiler
+│   ├── Services/              # Core services (operations, logging, progress, resume)
+│   └── Models/                # Data models and enums
+├── KopioRapido/               # GUI Application (.NET MAUI)
+│   ├── ViewModels/            # MVVM ViewModels
+│   ├── Services/              # GUI-specific services (folder picker)
+│   ├── Converters/            # XAML value converters
+│   └── Platforms/             # Platform-specific implementations
+│       ├── Windows/           # Windows folder picker, drag-drop
+│       └── MacCatalyst/       # macOS folder picker, drag-drop
+└── KopioRapido.CLI/           # Command-Line Interface
+    ├── Commands/              # CLI command implementations (7 commands)
+    └── Output/                # Output formatters (Console + JSON)
 ```
 
 ## Roadmap
 
 ### Planned Features
 
-- [ ] **Command-Line Interface** - Full CLI with RoboCopy-compatible commands
 - [ ] **Shell Integration** - Right-click context menu ("Copy with KopioRapido")
+- [ ] **Custom State Directory** - Full support for `--state-dir` flag (currently warns but uses default)
+- [ ] **Tab Completion** - Shell completion scripts for bash/zsh/PowerShell
 
 ### Completed Features
 
+- [x] **Command-Line Interface** - Full CLI with 7 commands, JSON output, rich formatting
 - [x] **Drag-and-Drop Support** - Drag folders from Finder/Explorer into source/destination panes
 - [x] **Multiple Operation Types** - Copy, Move, Sync, Mirror, BiDirectionalSync
 - [x] **Intelligence Engine** - Automatic storage profiling and strategy selection
@@ -248,7 +252,7 @@ KopioRapido/
 - [x] **Selective Compression** - Brotli compression for compressible files on network transfers
 - [x] **Core file copying engine** - Optimized with FastRsyncNet delta synchronization
 - [x] **Progress tracking** - Real-time speed, ETA, compression statistics
-- [x] **Resumable operations** - Automatic state persistence and recovery
+- [x] **Resumable operations** - Automatic state persistence and recovery (GUI + CLI)
 - [x] **Detailed logging** - Per-operation logs with rich emoji indicators
 - [x] **Dual-pane GUI** - Modern interface with golden ratio sizing
 - [x] **Cross-platform support** - Windows and macOS/MacCatalyst
