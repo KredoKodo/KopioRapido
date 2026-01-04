@@ -11,6 +11,8 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
+    <!-- Override vulnerable transitive dependency from FastRsyncNet -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <!-- Windows-only for WMI -->
     <PackageReference Include="System.Management" Version="9.0.0" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>

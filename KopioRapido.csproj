@@ -66,6 +66,10 @@
 		<!-- Exclude KopioRapido.Core directory from being compiled in GUI project -->
 		<Compile Remove="KopioRapido.Core\**\*" />
 		<None Include="KopioRapido.Core\**\*" />
+		
+		<!-- Exclude KopioRapido.CLI directory from being compiled in GUI project -->
+		<Compile Remove="KopioRapido.CLI\**\*" />
+		<None Include="KopioRapido.CLI\**\*" />
 	</ItemGroup>
 
 	<ItemGroup>
