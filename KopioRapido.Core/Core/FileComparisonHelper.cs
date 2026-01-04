@@ -16,8 +16,14 @@ public class FileComparisonHelper
             ? Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories)
             : Array.Empty<string>();
 
+        // Get all directories from source (to preserve empty directories)
+        var sourceDirectories = Directory.Exists(sourcePath)
+            ? Directory.GetDirectories(sourcePath, "*", SearchOption.AllDirectories)
+            : Array.Empty<string>();
+
         // Build dictionary of destination files by relative path
         var destFilesByRelativePath = new Dictionary<string, FileInfo>(StringComparer.OrdinalIgnoreCase);
+        var destDirectoriesByRelativePath = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (Directory.Exists(destPath))
         {
             var destFiles = Directory.GetFiles(destPath, "*", SearchOption.AllDirectories);
@@ -25,6 +31,24 @@ public class FileComparisonHelper
             {
                 var relativePath = Path.GetRelativePath(destPath, destFile);
                 destFilesByRelativePath[relativePath] = new FileInfo(destFile);
+            }
+
+            var destDirectories = Directory.GetDirectories(destPath, "*", SearchOption.AllDirectories);
+            foreach (var destDir in destDirectories)
+            {
+                var relativePath = Path.GetRelativePath(destPath, destDir);
+                destDirectoriesByRelativePath.Add(relativePath);
+            }
+        }
+
+        // Check for directories that exist only in source
+        foreach (var sourceDir in sourceDirectories)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relativePath = Path.GetRelativePath(sourcePath, sourceDir);
+            if (!destDirectoriesByRelativePath.Contains(relativePath))
+            {
+                result.SourceOnlyDirectories.Add(sourceDir);
             }
         }
 
@@ -108,6 +132,9 @@ public class FileComparisonHelper
             OperationType = operationType
         };
 
+        // Add directories to create for all operation types
+        plan.DirectoriesToCreate.AddRange(comparison.SourceOnlyDirectories);
+
         switch (operationType)
         {
             case CopyOperationType.Copy:
@@ -182,6 +209,7 @@ public class FileComparisonResult
     public List<FilePair> ConflictingFiles { get; set; } = new();
     public List<string> SourceOnlyFiles { get; set; } = new();
     public List<string> DestOnlyFiles { get; set; } = new();
+    public List<string> SourceOnlyDirectories { get; set; } = new();
 }
 
 public class FilePair
@@ -201,6 +229,7 @@ public class SyncPlan
     public List<string> FilesToDelete { get; set; } = new();       // For Mirror/Move
     public List<string> IdenticalFilesToSkip { get; set; } = new();
     public List<string> ConflictsToLog { get; set; } = new();
+    public List<string> DirectoriesToCreate { get; set; } = new();  // Directories to create in destination
     public int TotalFilesToCopy { get; set; }
     public long TotalBytesToCopy { get; set; }
     public int TotalFilesToDelete { get; set; }

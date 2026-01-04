@@ -45,7 +45,7 @@ public class FolderPickerService : IFolderPickerService
         
         if (file != null)
         {
-            await Windows.Storage.FileIO.WriteTextAsync(file, fileContent);
+            await global::Windows.Storage.FileIO.WriteTextAsync(file, fileContent);
             return file.Path;
         }
 

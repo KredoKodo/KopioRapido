@@ -1030,6 +1030,20 @@ public class FileCopyEngine
             // Set progress tracker totals
             _progressTracker.SetTotalSize(operation.Id, operation.TotalBytes, operation.TotalFiles);
 
+            // Create empty directories first
+            if (plan.DirectoriesToCreate.Count > 0)
+            {
+                await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                    $"Creating {plan.DirectoriesToCreate.Count} directories in destination...");
+
+                foreach (var sourceDir in plan.DirectoriesToCreate)
+                {
+                    var relativePath = Path.GetRelativePath(sourcePath, sourceDir);
+                    var destDir = Path.Combine(destinationPath, relativePath);
+                    Directory.CreateDirectory(destDir);
+                }
+            }
+
             // Copy only files that need to be copied
             await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);
 
@@ -1102,6 +1116,20 @@ public class FileCopyEngine
             
             // Set progress tracker totals
             _progressTracker.SetTotalSize(operation.Id, operation.TotalBytes, operation.TotalFiles);
+
+            // Phase 0: Create empty directories
+            if (plan.DirectoriesToCreate.Count > 0)
+            {
+                await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                    $"Creating {plan.DirectoriesToCreate.Count} directories in destination...");
+
+                foreach (var sourceDir in plan.DirectoriesToCreate)
+                {
+                    var relativePath = Path.GetRelativePath(sourcePath, sourceDir);
+                    var destDir = Path.Combine(destinationPath, relativePath);
+                    Directory.CreateDirectory(destDir);
+                }
+            }
 
             // Phase 1: Copy missing/newer files
             await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);
@@ -1201,6 +1229,20 @@ public class FileCopyEngine
             
             // Set progress tracker totals
             _progressTracker.SetTotalSize(operation.Id, operation.TotalBytes, operation.TotalFiles);
+
+            // Create empty directories first
+            if (plan.DirectoriesToCreate.Count > 0)
+            {
+                await _loggingService.LogAsync(operation.Id, LogLevel.Info,
+                    $"Creating {plan.DirectoriesToCreate.Count} directories in destination...");
+
+                foreach (var sourceDir in plan.DirectoriesToCreate)
+                {
+                    var relativePath = Path.GetRelativePath(sourcePath, sourceDir);
+                    var destDir = Path.Combine(destinationPath, relativePath);
+                    Directory.CreateDirectory(destDir);
+                }
+            }
 
             // Phase 1: Copy from source to destination
             await CopyFilesFromListAsync(operation, sourcePath, destinationPath, plan.FilesToCopy, progress, cts.Token, strategy);

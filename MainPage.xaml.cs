@@ -40,9 +40,93 @@ public partial class MainPage : ContentPage
         }
     }
 
+    protected override void OnHandlerChanged()
+    {
+        base.OnHandlerChanged();
+
+#if WINDOWS
+        // Set up native Windows drag-drop for the Border controls
+        if (Handler != null)
+        {
+            ConfigureWindowsDragDrop();
+        }
+#endif
+    }
+
+#if WINDOWS
+    private void ConfigureWindowsDragDrop()
+    {
+        try
+        {
+            ViewModel.AddLogMessage("🪟 Setting up Windows native drag-drop...");
+
+            // Configure drag-drop for Source border
+            Platforms.Windows.DragDropHelper.ConfigureDragDrop(
+                SourceBorder,
+                async (path) => await HandleDropAsync(path, isSource: true)
+            );
+
+            // Configure drag-drop for Destination border
+            Platforms.Windows.DragDropHelper.ConfigureDragDrop(
+                DestinationBorder,
+                async (path) => await HandleDropAsync(path, isSource: false)
+            );
+
+            ViewModel.AddLogMessage("✅ Windows drag-drop configured successfully");
+        }
+        catch (Exception ex)
+        {
+            ViewModel.AddLogMessage($"❌ Failed to configure Windows drag-drop: {ex.Message}");
+        }
+    }
+#endif
+
     private void OnCloseClicked(object sender, EventArgs e)
     {
         Application.Current?.Quit();
+    }
+
+    private void OnMinimizeClicked(object sender, EventArgs e)
+    {
+#if WINDOWS
+        var window = this.Window;
+        if (window == null) return;
+
+        var nativeWindow = window.Handler.PlatformView;
+        var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(nativeWindow);
+        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
+        var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
+
+        if (appWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter)
+        {
+            presenter.Minimize();
+        }
+#endif
+    }
+
+    private void OnMaximizeRestoreClicked(object sender, EventArgs e)
+    {
+#if WINDOWS
+        var window = this.Window;
+        if (window == null) return;
+
+        var nativeWindow = window.Handler.PlatformView;
+        var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(nativeWindow);
+        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
+        var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
+
+        if (appWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter)
+        {
+            if (presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Maximized)
+            {
+                presenter.Restore();
+            }
+            else
+            {
+                presenter.Maximize();
+            }
+        }
+#endif
     }
 
     private void OnWindowDrag(object sender, TappedEventArgs e)
@@ -96,7 +180,7 @@ public partial class MainPage : ContentPage
     private void OnDragOver(object? sender, DragEventArgs e)
     {
         // Accept the drag operation
-        e.AcceptedOperation = DataPackageOperation.Copy;
+        e.AcceptedOperation = Microsoft.Maui.Controls.DataPackageOperation.Copy;
     }
 
     private async void OnSourceDrop(object? sender, DropEventArgs e)

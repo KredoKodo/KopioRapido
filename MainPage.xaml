@@ -7,10 +7,81 @@
              Title="KopioRapido - High-Speed File Copy"
              x:DataType="viewmodels:MainViewModel">
 
-    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" Padding="20">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" Padding="0,0,0,20">
+
+        <!-- Custom Title Bar (Windows only) -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="10,5" BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#1E1E1E}">
+            <Grid.IsVisible>
+                <OnPlatform x:TypeArguments="x:Boolean">
+                    <On Platform="WinUI" Value="True" />
+                    <On Platform="MacCatalyst" Value="False" />
+                </OnPlatform>
+            </Grid.IsVisible>
+            
+            <!-- Draggable Title Area -->
+            <Label Grid.Column="0" 
+                   Text="KopioRapido" 
+                   FontSize="12"
+                   FontAttributes="Bold"
+                   VerticalOptions="Center"
+                   Margin="10,0,0,0"
+                   TextColor="{AppThemeBinding Light=#333333, Dark=#CCCCCC}">
+                <Label.GestureRecognizers>
+                    <PanGestureRecognizer PanUpdated="OnWindowPan"/>
+                </Label.GestureRecognizers>
+            </Label>
+            
+            <!-- Window Control Buttons -->
+            <HorizontalStackLayout Grid.Column="1" Spacing="0">
+                <!-- Minimize Button -->
+                <Border BackgroundColor="Transparent" 
+                        Padding="15,5"
+                        WidthRequest="46"
+                        HeightRequest="32">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnMinimizeClicked"/>
+                    </Border.GestureRecognizers>
+                    <Label Text="─" 
+                           FontSize="14"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#333333, Dark=#CCCCCC}"/>
+                </Border>
+                
+                <!-- Maximize/Restore Button -->
+                <Border BackgroundColor="Transparent" 
+                        Padding="15,5"
+                        WidthRequest="46"
+                        HeightRequest="32">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnMaximizeRestoreClicked"/>
+                    </Border.GestureRecognizers>
+                    <Label Text="□" 
+                           FontSize="14"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#333333, Dark=#CCCCCC}"/>
+                </Border>
+                
+                <!-- Close Button -->
+                <Border BackgroundColor="Transparent" 
+                        Padding="15,5"
+                        WidthRequest="46"
+                        HeightRequest="32">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnCloseClicked"/>
+                    </Border.GestureRecognizers>
+                    <Label Text="✕" 
+                           FontSize="14"
+                           HorizontalOptions="Center"
+                           VerticalOptions="Center"
+                           TextColor="{AppThemeBinding Light=#333333, Dark=#CCCCCC}"/>
+                </Border>
+            </HorizontalStackLayout>
+        </Grid>
 
         <!-- Title -->
-        <Label Grid.Row="0"
+        <Label Grid.Row="1"
                Text="KopioRapido"
                FontSize="32"
                FontAttributes="Bold"
@@ -18,7 +89,7 @@
                Margin="0,0,0,20"/>
 
         <!-- Dual Pane for Source and Destination (Hidden during copy) -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,250,*" Margin="0,0,0,20" IsVisible="{Binding IsCopying, Converter={StaticResource InverseBoolConverter}}">
+        <Grid Grid.Row="2" ColumnDefinitions="*,250,*" Margin="0,0,0,20" IsVisible="{Binding IsCopying, Converter={StaticResource InverseBoolConverter}}">
 
             <!-- Source Pane -->
             <Border x:Name="SourceBorder"
@@ -446,7 +517,7 @@
         </Grid>
 
         <!-- Summary View (Visible during copy) - Compact Version -->
-        <Border Grid.Row="1" Margin="0,0,0,10" IsVisible="{Binding IsCopying}"
+        <Border Grid.Row="3" Margin="0,0,0,10" IsVisible="{Binding IsCopying}"
                 BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#1E1E1E}"
                 Stroke="{AppThemeBinding Light=#DDDDDD, Dark=#444444}"
                 StrokeThickness="2"
@@ -506,7 +577,7 @@
         </Border>
 
         <!-- Strategy Information Panel (Visible when strategy is selected) -->
-        <Border Grid.Row="2" Margin="0,0,0,10" IsVisible="{Binding ShowStrategyInfo}"
+        <Border Grid.Row="4" Margin="0,0,0,10" IsVisible="{Binding ShowStrategyInfo}"
                 BackgroundColor="{AppThemeBinding Light=#F8FAFC, Dark=#1E293B}"
                 Stroke="{AppThemeBinding Light=#E2E8F0, Dark=#334155}"
                 StrokeThickness="2"
@@ -615,7 +686,7 @@
         </Border>
 
         <!-- Progress Section (Only visible when copying) -->
-        <VerticalStackLayout Grid.Row="3" Spacing="10" Margin="0,0,0,20" IsVisible="{Binding IsCopying}">
+        <VerticalStackLayout Grid.Row="5" Spacing="10" Margin="0,0,0,20" IsVisible="{Binding IsCopying}">
 
             <!-- Current File Info (Compact) -->
             <Border BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#2A2A2A}"
@@ -750,7 +821,7 @@
         </VerticalStackLayout>
 
         <!-- Control Button (Single button that toggles between Start Copy and Cancel) -->
-        <Grid Grid.Row="4" Margin="0,0,0,20" IsVisible="{Binding ShowStartButton}">
+        <Grid Grid.Row="6" Margin="0,0,0,20" IsVisible="{Binding ShowStartButton}">
             <Button Text="{Binding CopyButtonText}"
                     Command="{Binding StartCopyCommand}"
                     BackgroundColor="{Binding CopyButtonColor}"
@@ -763,7 +834,7 @@
         </Grid>
 
         <!-- Debug Log (temporary) -->
-        <Border Grid.Row="5"
+        <Border Grid.Row="7"
                 BackgroundColor="{AppThemeBinding Light=#FAFAFA, Dark=#1E1E1E}"
                 Stroke="{AppThemeBinding Light=#CCCCCC, Dark=#444444}"
                 StrokeThickness="1"
@@ -800,7 +871,7 @@
         </Border>
 
         <!-- Export Log Button -->
-        <Button Grid.Row="6"
+        <Button Grid.Row="8"
                 Text="Export Log"
                 Command="{Binding ExportLogCommand}"
                 FontSize="9"
